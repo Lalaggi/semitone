@@ -23,7 +23,7 @@ namespace G4 {
         private Gtk.Label _offset_label;
         private int64 _offset_ms = 0;
         private string _current_uri = "";
-        private string _current_raw = "";   // raw lyrics string in cache
+        private string _current_raw = "";
         public Adw.BottomSheet bottom_sheet;
 
         private static Soup.Session? _http_session = null;
@@ -32,6 +32,10 @@ namespace G4 {
             if (_http_session == null)
                 _http_session = new Soup.Session ();
             return (!)_http_session;
+        }
+
+        private void log (string msg) {
+            GLib.message ("[Lyrics] %s", msg);
         }
 
         public LyricsSheet (Application app) {
@@ -85,18 +89,17 @@ namespace G4 {
             bar.margin_start = 8;
             bar.margin_end = 8;
 
-            // Refresh button
             var refresh_btn = new Gtk.Button ();
             refresh_btn.icon_name = "view-refresh-symbolic";
             refresh_btn.tooltip_text = _("Refresh lyrics");
             refresh_btn.add_css_class ("flat");
             refresh_btn.clicked.connect (() => {
+                log ("Manual refresh requested, clearing cache");
                 clear_cache (_current_uri);
                 load_lyrics.begin ();
             });
             bar.append (refresh_btn);
 
-            // Offset controls (centred)
             var offset_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 4);
             offset_box.halign = Gtk.Align.CENTER;
             offset_box.hexpand = true;
@@ -107,8 +110,7 @@ namespace G4 {
             minus_btn.clicked.connect (() => {
                 _offset_ms -= 100;
                 update_offset_label ();
-                save_cache (_current_uri, _current_raw,
-                    _provider_label.label, _offset_ms);
+                save_cache (_current_uri, _current_raw, _provider_label.label, _offset_ms);
             });
 
             _offset_label = new Gtk.Label ("0ms");
@@ -121,8 +123,7 @@ namespace G4 {
             plus_btn.clicked.connect (() => {
                 _offset_ms += 100;
                 update_offset_label ();
-                save_cache (_current_uri, _current_raw,
-                    _provider_label.label, _offset_ms);
+                save_cache (_current_uri, _current_raw, _provider_label.label, _offset_ms);
             });
 
             offset_box.append (minus_btn);
@@ -130,7 +131,6 @@ namespace G4 {
             offset_box.append (plus_btn);
             bar.append (offset_box);
 
-            // Edit button
             var edit_btn = new Gtk.Button ();
             edit_btn.icon_name = "document-edit-symbolic";
             edit_btn.tooltip_text = _("Edit lyrics");
@@ -177,7 +177,8 @@ namespace G4 {
         private void on_position_updated (Gst.ClockTime position) {
             var sec = GstPlayer.to_second (position);
             var ms = (int64) (sec * 1000) + _offset_ms;
-            update_current_line (ms, ms / 1000.0);
+            var adj_sec = (double) ms / 1000.0;
+            update_current_line (ms, adj_sec);
         }
 
         private void update_current_line (int64 ms, double sec) {
@@ -360,7 +361,6 @@ namespace G4 {
                 var new_raw = text_view.buffer.text;
                 _current_raw = new_raw;
                 save_cache (_current_uri, new_raw, _provider_label.label, _offset_ms);
-                // Re-parse and redisplay
                 _lines = {};
                 _current_index = -1;
                 _lines = parse_rich_sync (new_raw);
@@ -379,7 +379,7 @@ namespace G4 {
             dialog.present (win);
         }
 
-        // ── Cache ─────────────────────────────────────────────────────
+        // ── Cache ────────────────────────────────────────────────────
 
         private string get_cache_path (string uri) {
             var cache_dir = GLib.Path.build_filename (
@@ -393,7 +393,6 @@ namespace G4 {
             if (uri.length == 0) return;
             var path = get_cache_path (uri);
             var now = (int64) GLib.get_real_time () / 1000000;
-            // Build JSON manually to avoid extra deps
             var escaped_uri = uri.replace ("\\", "\\\\").replace ("\"", "\\\"");
             var escaped_provider = provider.replace ("\"", "\\\"");
             var escaped_raw = raw.replace ("\\", "\\\\")
@@ -404,10 +403,12 @@ namespace G4 {
                 .printf (escaped_uri, escaped_provider, now, offset, escaped_raw);
             try {
                 FileUtils.set_contents (path, json);
-            } catch (Error e) {}
+                log ("Cache saved to %s".printf (path));
+            } catch (Error e) {
+                log ("Cache save failed: %s".printf (e.message));
+            }
         }
 
-        // Returns true if cache was loaded successfully
         private bool load_cache (string uri) {
             if (uri.length == 0) return false;
             var path = get_cache_path (uri);
@@ -415,21 +416,28 @@ namespace G4 {
             try {
                 FileUtils.get_contents (path, out contents);
             } catch (Error e) {
+                log ("No cache for this track");
                 return false;
             }
 
-            // Parse fetched_at to check staleness (7 days)
             var fetched_at = extract_json_int (contents, "fetched_at");
             var now = (int64) GLib.get_real_time () / 1000000;
             if (fetched_at > 0 && (now - fetched_at) > 7 * 24 * 3600) {
-                return false; // stale, re-fetch
+                log ("Cache is stale (>7 days), will re-fetch");
+                return false;
             }
 
             var provider = extract_json_string (contents, "provider");
             var offset = extract_json_int (contents, "offset_ms");
             var raw = extract_json_string (contents, "lyrics");
 
-            if (raw.length == 0) return false;
+            log ("Cache hit: provider='%s', offset=%lld, raw length=%d".printf (
+                provider, offset, raw.length));
+
+            if (raw.length == 0) {
+                log ("Cache has empty lyrics, ignoring");
+                return false;
+            }
 
             _current_raw = raw;
             _offset_ms = offset;
@@ -437,10 +445,15 @@ namespace G4 {
             set_provider (provider + " (cached)");
 
             _lines = parse_rich_sync (raw);
-            if (_lines.length == 0)
+            log ("Cache: rich sync parsed %d lines".printf (_lines.length));
+            if (_lines.length == 0) {
                 _lines = parse_ttml (raw);
-            if (_lines.length == 0)
+                log ("Cache: ttml parsed %d lines".printf (_lines.length));
+            }
+            if (_lines.length == 0) {
                 _lines = parse_lrc (raw);
+                log ("Cache: lrc parsed %d lines".printf (_lines.length));
+            }
 
             return _lines.length > 0;
         }
@@ -449,9 +462,9 @@ namespace G4 {
             if (uri.length == 0) return;
             var path = get_cache_path (uri);
             FileUtils.unlink (path);
+            log ("Cache cleared: %s".printf (path));
         }
 
-        // Minimal JSON field extractors (no deps)
         private string extract_json_string (string json, string key) {
             var search = "\"" + key + "\":\"";
             var idx = json.index_of (search);
@@ -501,14 +514,20 @@ namespace G4 {
 
             var music = _app.current_music;
             if (music == null) {
+                log ("No current music, aborting");
                 show_not_found ();
                 return;
             }
             var m = (!)music;
             _current_uri = m.uri;
 
-            // 1. Try cache first
+            log ("Loading lyrics for: '%s' by '%s' (album: '%s')".printf (
+                m.title, m.artist, m.album));
+
+            // 1. Cache
+            log ("Checking cache...");
             if (load_cache (_current_uri)) {
+                log ("Loaded from cache, %d lines".printf (_lines.length));
                 populate_list ();
                 return;
             }
@@ -522,6 +541,7 @@ namespace G4 {
                     test_file.load_contents (null, out data, null);
                     var raw = (string) data;
                     if (raw.length > 0) {
+                        log ("Using test file");
                         _current_raw = raw;
                         _lines = parse_lrc (raw);
                         set_provider ("Test File");
@@ -535,9 +555,16 @@ namespace G4 {
 
             // 3. BetterLyrics
             if (settings.get_boolean ("lyrics-betterlyrics-enabled")) {
-                var bl_result = yield fetch_betterlyrics (m.title, m.artist, m.album);
-                if (bl_result != null) {
+                log ("Trying BetterLyrics...");
+                var bl_result = yield fetch_betterlyrics (m.title, m.artist, m.album, 0);
+                if (bl_result == null) {
+                    log ("BetterLyrics: no response or HTTP error");
+                } else {
+                    log ("BetterLyrics: got response (%d chars), first 200: %s".printf (
+                        ((!)bl_result).length,
+                        ((!)bl_result).substring (0, int.min (200, ((!)bl_result).length))));
                     _lines = parse_ttml ((!)bl_result);
+                    log ("BetterLyrics: parsed %d lines".printf (_lines.length));
                     if (_lines.length > 0) {
                         _current_raw = (!)bl_result;
                         set_provider ("BetterLyrics");
@@ -546,17 +573,29 @@ namespace G4 {
                         return;
                     }
                 }
+            } else {
+                log ("BetterLyrics disabled in settings");
             }
 
             // 4. SimpMusic
             if (settings.get_boolean ("lyrics-simpmusic-enabled")) {
+                log ("comment tag: '%s'".printf (m.comment));
                 var yt_id = extract_youtube_id (m.comment);
-                if (yt_id != null) {
+                if (yt_id == null) {
+                    log ("SimpMusic: no YouTube ID in comment, skipping");
+                } else {
+                    log ("Trying SimpMusic with ID: %s".printf ((!)yt_id));
                     var sm_result = yield fetch_simpmusic ((!)yt_id);
-                    if (sm_result != null) {
+                    if (sm_result == null) {
+                        log ("SimpMusic: no response");
+                    } else {
+                        log ("SimpMusic: got response (%d chars)".printf (((!)sm_result).length));
                         _lines = parse_rich_sync ((!)sm_result);
-                        if (_lines.length == 0)
+                        log ("SimpMusic: rich sync parsed %d lines".printf (_lines.length));
+                        if (_lines.length == 0) {
                             _lines = parse_lrc ((!)sm_result);
+                            log ("SimpMusic: lrc fallback parsed %d lines".printf (_lines.length));
+                        }
                         if (_lines.length > 0) {
                             _current_raw = (!)sm_result;
                             set_provider ("SimpMusic");
@@ -566,13 +605,20 @@ namespace G4 {
                         }
                     }
                 }
+            } else {
+                log ("SimpMusic disabled in settings");
             }
 
             // 5. LRCLib
             if (settings.get_boolean ("lyrics-lrclib-enabled")) {
+                log ("Trying LRCLib...");
                 var lrclib_result = yield fetch_lrclib (m.title, m.artist, m.album);
-                if (lrclib_result != null) {
+                if (lrclib_result == null) {
+                    log ("LRCLib: no response");
+                } else {
+                    log ("LRCLib: got response (%d chars)".printf (((!)lrclib_result).length));
                     _lines = parse_lrc ((!)lrclib_result);
+                    log ("LRCLib: parsed %d lines".printf (_lines.length));
                     if (_lines.length > 0) {
                         _current_raw = (!)lrclib_result;
                         set_provider ("LRCLib");
@@ -581,8 +627,11 @@ namespace G4 {
                         return;
                     }
                 }
+            } else {
+                log ("LRCLib disabled in settings");
             }
 
+            log ("All providers failed");
             set_provider ("");
             show_not_found ();
         }
@@ -594,7 +643,10 @@ namespace G4 {
                 var msg = new Soup.Message ("GET", url);
                 msg.request_headers.append ("User-Agent", "Semitone/1.0");
                 var stream = yield http_session ().send_async (msg, GLib.Priority.DEFAULT, null);
-                if (msg.status_code != 200) return null;
+                if (msg.status_code != 200) {
+                    log ("HTTP %u for %s".printf (msg.status_code, url));
+                    return null;
+                }
                 var dis = new DataInputStream (stream);
                 var sb = new StringBuilder ();
                 string? line = null;
@@ -607,27 +659,74 @@ namespace G4 {
                 } while (line != null);
                 return sb.str;
             } catch (Error e) {
+                log ("HTTP error for %s: %s".printf (url, e.message));
+                return null;
+            }
+        }
+
+        private async string? http_get_bl (string url) {
+            try {
+                var msg = new Soup.Message ("GET", url);
+                msg.request_headers.append ("User-Agent",
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                msg.request_headers.append ("Accept", "application/json");
+                var stream = yield http_session ().send_async (msg, GLib.Priority.DEFAULT, null);
+                if (msg.status_code != 200) {
+                    log ("BetterLyrics HTTP %u".printf (msg.status_code));
+                    return null;
+                }
+                var dis = new DataInputStream (stream);
+                var sb = new StringBuilder ();
+                string? line = null;
+                do {
+                    line = yield dis.read_line_async (GLib.Priority.DEFAULT, null);
+                    if (line != null) {
+                        sb.append ((!)line);
+                        sb.append_c ('\n');
+                    }
+                } while (line != null);
+                return sb.str;
+            } catch (Error e) {
+                log ("BetterLyrics HTTP error: %s".printf (e.message));
                 return null;
             }
         }
 
         // ── BetterLyrics ─────────────────────────────────────────────
 
-        private async string? fetch_betterlyrics (string title, string artist, string album) {
-            var url = "https://lyrics-api.boidu.dev/getLyrics?s=%s&a=%s&al=%s".printf (
+        private async string? fetch_betterlyrics (string title, string artist, string album, int duration) {
+            var url = "https://lyrics-api.boidu.dev/getLyrics?s=%s&a=%s&al=%s&d=%d".printf (
                 Uri.escape_string (title, null, false),
                 Uri.escape_string (artist, null, false),
-                Uri.escape_string (album, null, false));
-            var body = yield http_get (url);
+                Uri.escape_string (album, null, false),
+                duration);
+            log ("BetterLyrics URL: %s".printf (url));
+            var body = yield http_get_bl (url);
             if (body == null) return null;
             try {
                 var parser = new Json.Parser ();
                 parser.load_from_data ((!)body);
                 var root_obj = parser.get_root ()?.get_object ();
-                if (root_obj == null) return null;
+                if (root_obj == null) {
+                    log ("BetterLyrics: JSON root is null or not an object");
+                    return null;
+                }
                 var obj = (!)root_obj;
-                return obj.get_string_member ("ttml");
+                var keys = new StringBuilder ();
+                obj.foreach_member ((o, name, node) => {
+                    if (keys.len > 0) keys.append (", ");
+                    keys.append (name);
+                });
+                log ("BetterLyrics: response keys: %s".printf (keys.str));
+                if (!obj.has_member ("ttml")) {
+                    log ("BetterLyrics: no 'ttml' field in response");
+                    return null;
+                }
+                var ttml = obj.get_string_member ("ttml");
+                log ("BetterLyrics: ttml field length = %d".printf (ttml.length));
+                return ttml;
             } catch (Error e) {
+                log ("BetterLyrics: JSON parse error: %s".printf (e.message));
                 return null;
             }
         }
@@ -810,13 +909,30 @@ namespace G4 {
             }
         }
 
+        // ── Metadata tag stripping ───────────────────────────────────
+
+        private string strip_lrc_metadata (string lrc) {
+            var sb = new StringBuilder ();
+            foreach (var line in lrc.split ("\n")) {
+                var ls = line.strip ();
+                if (ls.has_prefix ("[offset:") || ls.has_prefix ("[ti:") ||
+                    ls.has_prefix ("[ar:")     || ls.has_prefix ("[al:") ||
+                    ls.has_prefix ("[by:")     || ls.has_prefix ("[length:") ||
+                    ls.has_prefix ("[re:")     || ls.has_prefix ("[ve:"))
+                    continue;
+                sb.append (ls);
+                sb.append_c ('\n');
+            }
+            return sb.str;
+        }
+
         // ── richSyncLyrics parser ────────────────────────────────────
 
         private LyricLine[] parse_rich_sync (string lrc) {
             if (!lrc.contains ("<")) return {};
 
             LyricLine[] result = {};
-            foreach (var raw_line in lrc.split ("\n")) {
+            foreach (var raw_line in strip_lrc_metadata (lrc).split ("\n")) {
                 var line = raw_line.strip ();
                 if (line.length < 5 || line[0] != '[') continue;
 
@@ -877,7 +993,7 @@ namespace G4 {
 
         private LyricLine[] parse_lrc (string lrc) {
             LyricLine[] result = {};
-            var raw_lines = lrc.split ("\n");
+            var raw_lines = strip_lrc_metadata (lrc).split ("\n");
             var i = 0;
             while (i < raw_lines.length) {
                 var line = raw_lines[i].strip ();

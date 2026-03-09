@@ -8,7 +8,11 @@
       <key name="ui-scale" type="d">
     <default>1.0</default>
     <summary>Internal UI scale factor</summary>
-</key>
+    </key>
+      <key name="repeat-mode" type="u">
+      <default>0</default>
+      <summary>Repeat mode (0=none, 1=all, 2=one)</summary>
+    </key>
     <key name="blur-mode" type="u">
       <range min="0" max="2"/>
       <default>1</default>

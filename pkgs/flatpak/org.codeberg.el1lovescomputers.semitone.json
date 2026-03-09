@@ -1,9 +1,9 @@
 {
-    "app-id": "com.github.neithern.g4music",
+    "app-id": "org.codeberg.el1lovescomputers.semitone",
     "runtime": "org.gnome.Platform",
-    "runtime-version": "49",
+    "runtime-version": "47",
     "sdk": "org.gnome.Sdk",
-    "command": "g4music",
+    "command": "semitone",
     "finish-args": [
         "--device=dri",
         "--share=ipc",
@@ -28,7 +28,7 @@
     ],
     "modules": [
         {
-            "name": "g4music",
+            "name": "semitone",
             "builddir": true,
             "buildsystem": "meson",
             "sources": [

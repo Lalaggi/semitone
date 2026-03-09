@@ -84,6 +84,7 @@ namespace RepeatMode {
             settings.bind ("audio-sink", _player, "audio-sink", SettingsBindFlags.DEFAULT);
             settings.bind ("volume", _player, "volume", SettingsBindFlags.DEFAULT);
             _queue_shuffled = settings.get_boolean ("queue-shuffled");
+            _repeat_mode = settings.get_uint ("repeat-mode");
             }
 
         public override void activate () {
@@ -306,9 +307,11 @@ namespace RepeatMode {
         private uint _repeat_mode = RepeatMode.NONE;
         public uint repeat_mode {
           get { return _repeat_mode; }
-          set { _repeat_mode = value; }
+          set {
+            _repeat_mode = value;
+            _settings.set_uint ("repeat-mode", value);
+          }
         }
-
         public uint sort_mode {
             get {
                 return _sort_mode;

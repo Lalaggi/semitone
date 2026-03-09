@@ -83,24 +83,10 @@ namespace G4 {
             _repeat.clicked.connect (() => {
                 var mode = (app.repeat_mode + 1) % 3;
                 app.repeat_mode = mode;
-                switch (mode) {
-                    case RepeatMode.NONE:
-                        _repeat.icon_name = "media-playlist-repeat-symbolic";
-                        _repeat.tooltip_text = _("No Repeat");
-                        _repeat.opacity = 0.5;
-                        break;
-                    case RepeatMode.ALL:
-                        _repeat.icon_name = "media-playlist-repeat-symbolic";
-                        _repeat.tooltip_text = _("Repeat All");
-                        _repeat.opacity = 1.0;
-                        break;
-                    case RepeatMode.ONE:
-                        _repeat.icon_name = "media-playlist-repeat-song-symbolic";
-                        _repeat.tooltip_text = _("Repeat One");
-                        _repeat.opacity = 1.0;
-                        break;
-                }
+                update_repeat_button (mode);
             });
+
+            update_repeat_button (app.repeat_mode);
 
             _prev.valign = Gtk.Align.CENTER;
             _prev.action_name = ACTION_APP + ACTION_PREV;
@@ -110,7 +96,7 @@ namespace G4 {
 
             _play.valign = Gtk.Align.CENTER;
             _play.action_name = ACTION_APP + ACTION_PLAY_PAUSE;
-            _play.icon_name = "media-playback-start-symbolic"; // media-playback-pause-symbolic
+            _play.icon_name = "media-playback-start-symbolic";
             _play.tooltip_text = _("Play/Pause");
             _play.add_css_class ("circular");
             _play.set_size_request (48, 48);
@@ -139,7 +125,6 @@ namespace G4 {
                 return _volume;
             }
         }
-
 
         public double peak {
             set {
@@ -187,6 +172,26 @@ namespace G4 {
             _play.icon_name = playing ? "media-playback-pause-symbolic" : "media-playback-start-symbolic";
         }
 
+        private void update_repeat_button (uint mode) {
+            switch (mode) {
+                case RepeatMode.NONE:
+                    _repeat.icon_name = "media-playlist-repeat-symbolic";
+                    _repeat.tooltip_text = _("No Repeat");
+                    _repeat.opacity = 0.5;
+                    break;
+                case RepeatMode.ALL:
+                    _repeat.icon_name = "media-playlist-repeat-symbolic";
+                    _repeat.tooltip_text = _("Repeat All");
+                    _repeat.opacity = 1.0;
+                    break;
+                case RepeatMode.ONE:
+                    _repeat.icon_name = "media-playlist-repeat-song-symbolic";
+                    _repeat.tooltip_text = _("Repeat One");
+                    _repeat.opacity = 1.0;
+                    break;
+            }
+        }
+
         private void setup_seek_bar (GstPlayer player) {
             _seek.change_value.connect ((type, value) => {
                 if (_seeking) {
@@ -197,8 +202,6 @@ namespace G4 {
                 return false;
             });
 
-            // Hack that grabs the click gesture controller as mouse released event doesn't work otherwise
-            // Bug: https://gitlab.gnome.org/GNOME/gtk/-/issues/4939
             Gtk.GestureClick? click_gesture = null;
             var controllers = _seek.observe_controllers ();
             for (var i = 0; i < controllers.get_n_items (); i++) {
@@ -238,45 +241,20 @@ namespace G4 {
             }
             _seek.set_value (value);
         }
-    }
 
-    public static string format_time (int seconds) {
-        var sb = new StringBuilder ();
-        var hours = seconds / 3600;
-        var minutes = seconds / 60;
-        seconds -= minutes * 60;
-        if (hours > 0) {
-            minutes -= hours * 60;
-            sb.printf ("%d:%02d:%02d", hours, minutes, seconds);
-        } else {
-            sb.printf ("%d:%02d", minutes, seconds);
-        }
-        return sb.str;
-    }
-
-    public static Gtk.GestureClick make_widget_clickable (Gtk.Widget label) {
-        var controller = new Gtk.GestureClick ();
-        controller.button = Gdk.BUTTON_PRIMARY;
-        label.add_controller (controller);
-        label.set_cursor_from_name ("pointer");
-        return controller;
-    }
-    private void setup_sleep_popover (Gtk.MenuButton btn, Application app) {
+        private void setup_sleep_popover (Gtk.MenuButton btn, Application app) {
             var timer = app.sleep_timer;
 
-            // --- Setup popover ---
             var popover = new Gtk.Popover ();
             popover.has_arrow = true;
             btn.popover = popover;
 
-            // --- Setup popover ---
             var setup_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
             setup_box.margin_top = 12;
             setup_box.margin_bottom = 12;
             setup_box.margin_start = 16;
             setup_box.margin_end = 16;
 
-            // Counter row
             var counter_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
             counter_box.halign = Gtk.Align.CENTER;
 
@@ -303,19 +281,16 @@ namespace G4 {
             unit_label.halign = Gtk.Align.CENTER;
             setup_box.append (unit_label);
 
-            // Finish track checkbox
             var finish_check = new Gtk.CheckButton.with_label (_("Finish current track"));
             finish_check.halign = Gtk.Align.CENTER;
             setup_box.append (finish_check);
 
-            // Start button
             var start_btn = new Gtk.Button.with_label (_("Start"));
             start_btn.add_css_class ("suggested-action");
             start_btn.add_css_class ("pill");
             start_btn.halign = Gtk.Align.CENTER;
             setup_box.append (start_btn);
 
-            // --- Active popover ---
             var active_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
             active_box.margin_top = 12;
             active_box.margin_bottom = 12;
@@ -342,13 +317,11 @@ namespace G4 {
             active_btns.append (add_btn);
             active_box.append (active_btns);
 
-            // Stack to switch between setup and active views
             var stack = new Gtk.Stack ();
             stack.add_named (setup_box, "setup");
             stack.add_named (active_box, "active");
             popover.child = stack;
 
-            // Wire up counter
             var minutes = 15;
             minus_btn.clicked.connect (() => {
                 minutes = int.max (1, minutes - 1);
@@ -359,32 +332,27 @@ namespace G4 {
                 value_label.label = minutes.to_string ();
             });
 
-            // Start
             start_btn.clicked.connect (() => {
                 timer.finish_track = finish_check.active;
                 timer.start (minutes * 60);
                 stack.visible_child_name = "active";
             });
 
-            // Stop
             stop_btn.clicked.connect (() => {
                 timer.stop ();
                 stack.visible_child_name = "setup";
             });
 
-            // +1 min
             add_btn.clicked.connect (() => {
                 timer.add_seconds (60);
             });
 
-            // Tick updates
             timer.tick.connect ((secs) => {
                 var m = secs / 60;
                 var s = secs % 60;
                 countdown_label.label = "%d:%02d".printf (m, s);
             });
 
-            // State changes
             timer.state_changed.connect ((active) => {
                 btn.opacity = active ? 1.0 : 0.5;
                 stack.visible_child_name = active ? "active" : "setup";
@@ -392,7 +360,6 @@ namespace G4 {
                     popover.popdown ();
             });
 
-            // Reset to setup view when opening if not active
             popover.show.connect (() => {
                 stack.visible_child_name = timer.active ? "active" : "setup";
                 if (timer.active) {
@@ -402,4 +369,27 @@ namespace G4 {
                 }
             });
         }
+    }
+
+    public static string format_time (int seconds) {
+        var sb = new StringBuilder ();
+        var hours = seconds / 3600;
+        var minutes = seconds / 60;
+        seconds -= minutes * 60;
+        if (hours > 0) {
+            minutes -= hours * 60;
+            sb.printf ("%d:%02d:%02d", hours, minutes, seconds);
+        } else {
+            sb.printf ("%d:%02d", minutes, seconds);
+        }
+        return sb.str;
+    }
+
+    public static Gtk.GestureClick make_widget_clickable (Gtk.Widget label) {
+        var controller = new Gtk.GestureClick ();
+        controller.button = Gdk.BUTTON_PRIMARY;
+        label.add_controller (controller);
+        label.set_cursor_from_name ("pointer");
+        return controller;
+    }
 }

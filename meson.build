@@ -4,7 +4,7 @@ project(
   license: 'GPL3'
 )
 
-app_id = 'com.github.lalaggi.' + meson.project_name()
+app_id = 'org.codeberg.el1lovescomputers.' + meson.project_name()
 version = meson.project_version()
 
 gnome = import('gnome')
