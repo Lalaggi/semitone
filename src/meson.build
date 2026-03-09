@@ -28,6 +28,7 @@ sources = [
   'ui/taglist-dialog.vala',
   'ui/volume-button.vala',
   'ui/window.vala',
+  'utils/discord-rpc.vala',
   'utils/async-task.vala',
   'utils/cover-cache.vala',
   'utils/data-io.vala',

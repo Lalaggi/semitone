@@ -27,6 +27,7 @@ namespace RepeatMode {
         private bool _store_external_changed = false;
         private Thumbnailer _thumbnailer = new Thumbnailer ();
         private SleepTimer? _sleep_timer = null;
+        private DiscordRPC? _discord_rpc = null;
 
         public signal void index_changed (int index, uint size);
         public signal void music_changed (Music? music);
@@ -73,6 +74,7 @@ namespace RepeatMode {
             if (_mpris_id == 0)
                 warning ("Initialize MPRIS session failed\n");
             _sleep_timer = new SleepTimer (this);
+            _discord_rpc = new DiscordRPC (this);
             var settings = _settings = new Settings (application_id); 
             settings.bind ("color-scheme", this, "color-scheme", SettingsBindFlags.DEFAULT);
             settings.bind ("music-dir", this, "music-folder", SettingsBindFlags.DEFAULT);

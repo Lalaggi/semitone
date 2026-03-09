@@ -63,6 +63,8 @@ namespace G4 {
         private bool _size_allocated = false;
         private uint _sort_mode = -1;
         private bool _updating_store = false;
+        private Gtk.Button _tracks_play_btn = new Gtk.Button ();
+        private Gtk.Button _tracks_shuffle_btn = new Gtk.Button ();
 
         public StorePanel (Application app, Window win, Leaflet leaflet) {
             _app = app;
@@ -177,10 +179,13 @@ namespace G4 {
                     if (stack != null)
                         value = ((!)stack).visible_child;
                 }
-                if (value is MusicList) {
+                    if (value is MusicList) {
                     var list = _current_list = (MusicList) value;
                     indicator.visible = _current_list.modified;
                     sort_btn.visible = false;
+                    var on_tracks = (value == _tracks_list);
+                    _tracks_play_btn.visible = on_tracks;
+                    _tracks_shuffle_btn.visible = on_tracks;
                     _search_mode = SearchMode.ANY;
                     on_search_btn_toggled ();
 
@@ -268,6 +273,26 @@ namespace G4 {
             all_musics.sort ((a, b) => a.title.collate (b.title));
             _tracks_list.data_store.remove_all ();
             _tracks_list.data_store.splice (0, 0, (Object[]) all_musics.data);
+            _tracks_play_btn.icon_name = "media-playback-start-symbolic";
+            _tracks_play_btn.tooltip_text = _("Play All");
+            _tracks_play_btn.add_css_class ("flat");
+            _tracks_play_btn.visible = false;
+            _tracks_play_btn.clicked.connect (() => {
+                _current_list = _tracks_list;
+                play_current_list (0, false);
+            });
+
+            _tracks_shuffle_btn.icon_name = "media-playlist-shuffle-symbolic";
+            _tracks_shuffle_btn.tooltip_text = _("Shuffle All");
+            _tracks_shuffle_btn.add_css_class ("flat");
+            _tracks_shuffle_btn.visible = false;
+            _tracks_shuffle_btn.clicked.connect (() => {
+                _current_list = _tracks_list;
+                play_current_list (0, true);
+            });
+
+            header_bar.pack_end (_tracks_play_btn);
+            header_bar.pack_end (_tracks_shuffle_btn);
         }
 
         private void bind_music_list_properties (MusicList list, bool editable = false) {
