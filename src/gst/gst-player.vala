@@ -125,6 +125,7 @@ namespace G4 {
             set {
                 _current_uri = value;
                 if (_pipeline != null) {
+                    _duration = Gst.CLOCK_TIME_NONE;
                     ((!)_pipeline).uri = value;
                     if (AtomicInt.compare_and_exchange (ref _audio_sink_requested, 1, 0))
                         update_audio_sink ();

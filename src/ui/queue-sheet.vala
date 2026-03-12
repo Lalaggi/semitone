@@ -57,7 +57,42 @@ namespace G4 {
                 app.queue_shuffled = shuffle_btn.active;
                 if (shuffle_btn.active) {
                     shuffle_btn.opacity = 1.0;
-                    sort_music_store (app.music_queue, SortMode.SHUFFLE);
+                    
+                    var current = app.current_music;
+                    if (current != null) {
+                        var store = app.music_queue;
+                        var count = store.get_n_items ();
+                        
+                        if (count > 1) {
+                            var arr = new GenericArray<Music> (count);
+                            for (var pos = 0; pos < count; pos++) {
+                                arr.add ((Music) store.get_item (pos));
+                            }
+                            
+                            int current_idx = -1;
+                            for (var i = 0; i < count; i++) {
+                                if (arr[i].uri == ((!)current).uri) {
+                                    current_idx = i;
+                                    break;
+                                }
+                            }
+                            
+                            if (current_idx > 0) {
+                                var temp = arr[0];
+                                arr[0] = arr[current_idx];
+                                arr[current_idx] = temp;
+                            }
+                            
+                            for (var i = arr.length - 1; i > 1; i--) {
+                                var r = Random.int_range (1, i + 1);
+                                var s = arr[i];
+                                arr[i] = arr[r];
+                                arr[r] = s;
+                            }
+                            
+                            store.splice (0, count, (Object[]) arr.data);
+                        }
+                    }
                 } else {
                     shuffle_btn.opacity = 0.5;
                     app.restore_queue_order ();

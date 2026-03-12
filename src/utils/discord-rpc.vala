@@ -3,8 +3,9 @@ namespace G4 {
     public class DiscordRPC : Object {
 
         // Replace with your Discord application client ID
-        private const string CLIENT_ID = "YOUR_CLIENT_ID_HERE";
-        private const string LARGE_IMAGE_KEY = "music_note";
+        private const string CLIENT_ID = "1481638961955733557";
+        private const string LARGE_IMAGE_KEY = "semitone";
+        private const string SMALL_IMAGE_KEY = "semitone";
 
         private SocketConnection? _conn = null;
         private bool _connected = false;
@@ -22,16 +23,30 @@ namespace G4 {
         // ── Connection ───────────────────────────────────────────────
 
         private async void connect_async () {
-            _connected = false;
-            var uid = (uint) Posix.getuid ();
-            var path = "/run/user/%u/discord-ipc-0".printf (uid);
-            try {
-                var addr = new UnixSocketAddress (path);
-                var client = new SocketClient ();
-                _conn = yield client.connect_async (addr, null);
-                yield do_handshake ();
-            } catch (Error e) {
-                GLib.message ("[DiscordRPC] Connect failed: %s", e.message);
+            // Try multiple IPC socket paths (Discord can use 0-9)
+            for (int i = 0; i < 10 && !_connected; i++) {
+                var uid = (uint) Posix.getuid ();
+                var path = "/run/user/%u/discord-ipc-%d".printf (uid, i);
+                GLib.message ("[DiscordRPC] Trying IPC socket: %s".printf (path));
+                try {
+                    var file = File.new_for_path (path);
+                    if (!file.query_exists ()) {
+                        GLib.message ("[DiscordRPC] Socket doesn't exist: %s".printf (path));
+                        continue;
+                    }
+                    
+                    var addr = new UnixSocketAddress (path);
+                    var client = new SocketClient ();
+                    _conn = yield client.connect_async (addr, null);
+                    GLib.message ("[DiscordRPC] Connected to %s".printf (path));
+                    yield do_handshake ();
+                    if (_connected) break;
+                } catch (Error e) {
+                    GLib.message ("[DiscordRPC] Failed to connect to %s: %s".printf (path, e.message));
+                    // Try next socket
+                }
+            }
+            if (!_connected) {
                 schedule_reconnect ();
             }
         }
@@ -43,10 +58,16 @@ namespace G4 {
             var response = yield read_frame ();
             if (response != null) {
                 _connected = true;
-                GLib.message ("[DiscordRPC] Connected");
+                GLib.message ("[DiscordRPC] Connected, waiting before sending...");
+                // Give Discord a moment to process the handshake
+                GLib.Thread.usleep (300000); // 300ms
+                GLib.message ("[DiscordRPC] Wait done, about to send presence...");
                 // Send current state if we already have a track
-                if (_current_title.length > 0)
+                if (_current_title.length > 0) {
+                    GLib.message ("[DiscordRPC] Sending presence for: %s - %s".printf (_current_title, _current_artist));
                     yield send_presence ();
+                    GLib.message ("[DiscordRPC] Presence sent");
+                }
             } else {
                 schedule_reconnect ();
             }
@@ -54,7 +75,8 @@ namespace G4 {
 
         private void schedule_reconnect () {
             if (_reconnect_source != 0) return;
-            _reconnect_source = Timeout.add_seconds (10, () => {
+            GLib.message ("[DiscordRPC] Scheduling reconnect in 5 seconds");
+            _reconnect_source = Timeout.add_seconds (5, () => {
                 _reconnect_source = 0;
                 connect_async.begin ();
                 return false;
@@ -66,11 +88,16 @@ namespace G4 {
         // Discord IPC frame: [opcode: 4 bytes LE] [length: 4 bytes LE] [json: length bytes]
 
         private async void send_frame (uint32 opcode, string json) {
-            if (_conn == null) return;
+            GLib.message ("[DiscordRPC] send_frame called, opcode=%u".printf (opcode));
+            if (_conn == null) {
+                GLib.message ("[DiscordRPC] _conn is null, returning");
+                return;
+            }
             try {
                 var stream = ((!)_conn).output_stream;
                 var data = json.data;
                 uint32 len = (uint32) data.length;
+                GLib.message ("[DiscordRPC] Sending %u bytes".printf (len));
 
                 // Build header (8 bytes, little-endian)
                 uint8 header[8];
@@ -88,6 +115,7 @@ namespace G4 {
             } catch (Error e) {
                 GLib.message ("[DiscordRPC] Send error: %s", e.message);
                 _connected = false;
+                _conn = null;
                 schedule_reconnect ();
             }
         }
@@ -110,6 +138,7 @@ namespace G4 {
             } catch (Error e) {
                 GLib.message ("[DiscordRPC] Read error: %s", e.message);
                 _connected = false;
+                _conn = null;
                 schedule_reconnect ();
                 return null;
             }
@@ -118,17 +147,25 @@ namespace G4 {
         // ── Presence ─────────────────────────────────────────────────
 
         private async void send_presence () {
-            if (!_connected) return;
+            GLib.message ("[DiscordRPC] send_presence called, _connected=%d".printf (_connected ? 1 : 0));
+            if (!_connected) {
+                GLib.message ("[DiscordRPC] Not connected, returning early");
+                return;
+            }
 
-            var state = _playing ? _current_artist : _("Paused");
+            // Type 0 = Playing (always works without special Discord approval)
+            // Type 2 = Listening (requires Discord approval)
+            var activity_type = "0";
             var details = _current_title;
-            var small_image = _playing ? "\"small_image\":\"play\",\"small_text\":\"Playing\"" :
-                                         "\"small_image\":\"pause\",\"small_text\":\"Paused\"";
+            var state = _current_artist.length > 0 ? _current_artist : "";
+            var small_image = _playing ? SMALL_IMAGE_KEY : "pause";
+            var small_text = _playing ? "Playing" : "Paused";
 
-            var assets = "{\"large_image\":\"%s\",\"large_text\":\"Semitone\",%s}".printf (
-                LARGE_IMAGE_KEY, small_image);
+            var assets = "{\"large_image\":\"%s\",\"large_text\":\"Semitone\",\"small_image\":\"%s\",\"small_text\":\"%s\"}".printf (
+                LARGE_IMAGE_KEY, small_image, small_text);
 
-            var activity = "{\"details\":%s,\"state\":%s,\"assets\":%s}".printf (
+            var activity = "{\"type\":%s,\"name\":\"Semitone\",\"details\":%s,\"state\":%s,\"assets\":%s}".printf (
+                activity_type,
                 json_escape (details),
                 json_escape (state),
                 assets);
@@ -136,9 +173,15 @@ namespace G4 {
             var payload = "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":%d,\"activity\":%s},\"nonce\":\"1\"}".printf (
                 (int) Posix.getpid (), activity);
 
+            GLib.message ("[DiscordRPC] Payload: %s".printf (payload));
             yield send_frame (1, payload);
             // Read the response to keep the socket clear
-            yield read_frame ();
+            var response = yield read_frame ();
+            if (response != null) {
+                GLib.message ("[DiscordRPC] Response: %s".printf ((!)response));
+            } else {
+                GLib.message ("[DiscordRPC] Response: null");
+            }
         }
 
         private void clear_presence () {

@@ -2,14 +2,14 @@
 <schemalist gettext-domain="semitone">
   <schema id="@app_id@" path="/com/github/lalaggi/semitone/">
     <key name="queue-shuffled" type="b">
-    <default>false</default>
-    <summary>Whether the queue is currently shuffled</summary>
+      <default>false</default>
+      <summary>Whether the queue is currently shuffled</summary>
     </key>
-      <key name="ui-scale" type="d">
-    <default>1.0</default>
-    <summary>Internal UI scale factor</summary>
+    <key name="ui-scale" type="d">
+      <default>1.0</default>
+      <summary>Internal UI scale factor</summary>
     </key>
-      <key name="repeat-mode" type="u">
+    <key name="repeat-mode" type="u">
       <default>0</default>
       <summary>Repeat mode (0=none, 1=all, 2=one)</summary>
     </key>
@@ -120,6 +120,42 @@
     <key name="lyrics-lrclib-enabled" type="b">
       <default>true</default>
       <summary>Fetch lyrics from LRCLib</summary>
+    </key>
+    <key name="lyrics-lyricsovh-enabled" type="b">
+      <default>true</default>
+      <summary>Enable Lyrics.ovh provider</summary>
+    </key>
+    <key name="lyrics-netease-enabled" type="b">
+      <default>false</default>
+      <summary>Enable NetEase lyrics provider</summary>
+    </key>
+    <key name="lyrics-megalobiz-enabled" type="b">
+      <default>false</default>
+      <summary>Enable Megalobiz lyrics provider</summary>
+    </key>
+    <key name="lyrics-genius-enabled" type="b">
+      <default>false</default>
+      <summary>Enable LyricGenius provider</summary>
+    </key>
+    <key name="lyrics-musixmatch-enabled" type="b">
+      <default>false</default>
+      <summary>Enable Musixmatch provider (requires API key)</summary>
+    </key>
+    <key name="lyrics-prefer-synced" type="b">
+      <default>true</default>
+      <summary>Always try synced providers first</summary>
+    </key>
+    <key name="lyrics-auto-select" type="b">
+      <default>true</default>
+      <summary>Automatically select best lyrics from any provider</summary>
+    </key>
+    <key name="lyrics-plain-fallback" type="b">
+      <default>true</default>
+      <summary>Fall back to plain text if no synced lyrics found</summary>
+    </key>
+    <key name="lyrics-provider-order" type="s">
+      <default>'simpmusic,lrclib,netease,lyricsovh,megalobiz,genius,musixmatch'</default>
+      <summary>Comma-separated provider priority order</summary>
     </key>
   </schema>
 </schemalist>

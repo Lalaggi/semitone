@@ -5,6 +5,26 @@ namespace G4 {
         public const uint ART_ONLY = 2;
     }
 
+    private struct LyricsProviderInfo {
+        public string id;
+        public string display_name;
+        public string subtitle;
+    }
+
+    private const LyricsProviderInfo[] LYRICS_PROVIDERS = {
+        { "betterlyrics", "BetterLyrics",  "Word-timed TTML lyrics (synced)"                    },
+        { "simpmusic",    "SimpMusic",      "Word-timed lyrics for YouTube Music tracks (synced)" },
+        { "lrclib",       "LRCLib",         "Synced and plain lyrics via LRCLib"                  },
+        { "netease",      "NetEase",        "Synced LRC lyrics from NetEase Music"                },
+        { "lyricsovh",   "Lyrics.ovh",     "Plain text lyrics via Lyrics.ovh"                   },
+        { "megalobiz",    "Megalobiz",      "Plain text lyrics via Megalobiz (scraping)"          },
+        { "genius",       "Genius",         "Plain text lyrics via Genius (scraping)"             },
+        { "musixmatch",   "Musixmatch",     "Plain text lyrics (requires API key)"                },
+    };
+
+    private const string DEFAULT_PROVIDER_ORDER =
+        "betterlyrics,simpmusic,lrclib,netease,lyricsovh,megalobiz,genius,musixmatch";
+
     [GtkTemplate (ui = "/com/github/lalaggi/semitone/gtk/preferences.ui")]
     public class PreferencesWindow : Adw.PreferencesWindow {
         [GtkChild]
@@ -38,28 +58,36 @@ namespace G4 {
         [GtkChild]
         unowned Gtk.Entry peak_entry;
         [GtkChild]
-        unowned Gtk.Switch betterlyrics_btn;
+        unowned Gtk.Switch lyrics_prefer_synced_btn;
         [GtkChild]
-        unowned Gtk.Switch simpmusic_btn;
+        unowned Gtk.Switch lyrics_auto_select_btn;
         [GtkChild]
-        unowned Gtk.Switch lrclib_btn;
+        unowned Gtk.Switch lyrics_plain_fallback_btn;
+        [GtkChild]
+        unowned Adw.ActionRow lyrics_auto_indicator;
+        [GtkChild]
+        unowned Adw.PreferencesGroup lyrics_providers_group;
 
         private GenericArray<Gst.ElementFactory> _audio_sinks = new GenericArray<Gst.ElementFactory> (8);
+        private Settings _settings;
+        private string[] _provider_order;
+        private HashTable<string, Adw.ActionRow> _provider_rows =
+            new HashTable<string, Adw.ActionRow> (str_hash, str_equal);
 
         public PreferencesWindow (Application app) {
-            var settings = app.settings;
+            _settings = app.settings;
 
             blur_row.model = new Gtk.StringList ({_("Never"), _("Always"), _("Art Only")});
-            settings.bind ("blur-mode", blur_row, "selected", SettingsBindFlags.DEFAULT);
-            scale_slider.set_value (settings.get_double ("ui-scale"));
+            _settings.bind ("blur-mode", blur_row, "selected", SettingsBindFlags.DEFAULT);
+            scale_slider.set_value (_settings.get_double ("ui-scale"));
             scale_slider.value_changed.connect (() => {
                 var scale = scale_slider.get_value ();
-                settings.set_double ("ui-scale", scale);
+                _settings.set_double ("ui-scale", scale);
                 apply_ui_scale (scale);
             });
-            settings.bind ("compact-playlist", compact_btn, "active", SettingsBindFlags.DEFAULT);
-            settings.bind ("grid-mode", grid_btn, "active", SettingsBindFlags.DEFAULT);
-            settings.bind ("single-click-activate", single_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("compact-playlist", compact_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("grid-mode", grid_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("single-click-activate", single_btn, "active", SettingsBindFlags.DEFAULT);
 
             music_dir_btn.label = get_display_name (app.music_folder);
             music_dir_btn.clicked.connect (() => {
@@ -68,41 +96,129 @@ namespace G4 {
                 });
             });
 
-            settings.bind ("monitor-changes", monitor_btn, "active", SettingsBindFlags.DEFAULT);
-
-            settings.bind ("remote-thumbnail", thumbnail_btn, "active", SettingsBindFlags.DEFAULT);
-
-            settings.bind ("play-background", playbkgnd_btn, "active", SettingsBindFlags.DEFAULT);
-
-            settings.bind ("rotate-cover", rotate_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("monitor-changes", monitor_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("remote-thumbnail", thumbnail_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("play-background", playbkgnd_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("rotate-cover", rotate_btn, "active", SettingsBindFlags.DEFAULT);
 
             replaygain_row.model = new Gtk.StringList ({_("Never"), _("Track"), _("Album")});
-            settings.bind ("replay-gain", replaygain_row, "selected", SettingsBindFlags.DEFAULT);
+            _settings.bind ("replay-gain", replaygain_row, "selected", SettingsBindFlags.DEFAULT);
+            _settings.bind ("gapless-playback", gapless_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("show-peak", peak_row, "enable_expansion", SettingsBindFlags.DEFAULT);
+            _settings.bind ("peak-characters", peak_entry, "text", SettingsBindFlags.DEFAULT);
 
-            settings.bind ("gapless-playback", gapless_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("lyrics-prefer-synced", lyrics_prefer_synced_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("lyrics-auto-select", lyrics_auto_select_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("lyrics-plain-fallback", lyrics_plain_fallback_btn, "active", SettingsBindFlags.DEFAULT);
 
-            settings.bind ("show-peak", peak_row, "enable_expansion", SettingsBindFlags.DEFAULT);
-            settings.bind ("peak-characters", peak_entry, "text", SettingsBindFlags.DEFAULT);
-            settings.bind ("lyrics-betterlyrics-enabled", betterlyrics_btn, "active", SettingsBindFlags.DEFAULT);
-            settings.bind ("lyrics-simpmusic-enabled", simpmusic_btn, "active", SettingsBindFlags.DEFAULT);
-            settings.bind ("lyrics-lrclib-enabled", lrclib_btn, "active", SettingsBindFlags.DEFAULT);
+            lyrics_auto_select_btn.notify["active"].connect (() => {
+                update_auto_indicator ();
+            });
+            update_auto_indicator ();
+
+            var order_str = _settings.get_string ("lyrics-provider-order");
+            if (order_str == "") order_str = DEFAULT_PROVIDER_ORDER;
+            _provider_order = order_str.split (",");
+
+            // Append any provider not yet in saved order (forward compat)
+            foreach (var p in LYRICS_PROVIDERS) {
+                bool found = false;
+                foreach (var id in _provider_order)
+                    if (id == p.id) { found = true; break; }
+                if (!found) _provider_order += p.id;
+            }
+
+            build_provider_rows ();
 
             GstPlayer.get_audio_sinks (_audio_sinks);
             var sink_names = new string[_audio_sinks.length];
             for (var i = 0; i < _audio_sinks.length; i++)
                 sink_names[i] = get_audio_sink_name (_audio_sinks[i]);
             audiosink_row.model = new Gtk.StringList (sink_names);
-            this.bind_property ("audio_sink", audiosink_row, "selected", BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
+            this.bind_property ("audio_sink", audiosink_row, "selected",
+                BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
+        }
+
+        private void update_auto_indicator () {
+            bool auto_select = lyrics_auto_select_btn.active;
+            if (auto_select) {
+                lyrics_auto_indicator.title = _("Auto mode is ON");
+                lyrics_auto_indicator.subtitle = _("Highest-scoring lyrics will be selected automatically");
+            } else {
+                lyrics_auto_indicator.title = _("Manual priority");
+                lyrics_auto_indicator.subtitle = _("Provider order above will be respected");
+            }
+        }
+
+        private void build_provider_rows () {
+            foreach (var row in _provider_rows.get_values ())
+                lyrics_providers_group.remove (row);
+            _provider_rows.remove_all ();
+
+            for (int i = 0; i < _provider_order.length; i++) {
+                var id = _provider_order[i];
+                LyricsProviderInfo? info = null;
+                foreach (var p in LYRICS_PROVIDERS)
+                    if (p.id == id) { info = p; break; }
+                if (info == null) continue;
+                var row = build_provider_row ((!)info, i);
+                _provider_rows.set (id, row);
+                lyrics_providers_group.add (row);
+            }
+        }
+
+        private Adw.ActionRow build_provider_row (LyricsProviderInfo info, int index) {
+            var row = new Adw.ActionRow ();
+            row.title = info.display_name;
+            row.subtitle = info.subtitle;
+            row.icon_name = "audio-x-generic-symbolic";
+
+            var up_btn = new Gtk.Button.from_icon_name ("go-up-symbolic");
+            up_btn.valign = Gtk.Align.CENTER;
+            up_btn.add_css_class ("flat");
+            up_btn.sensitive = (index > 0);
+            up_btn.tooltip_text = _("Move up");
+            var captured_id = info.id;
+            up_btn.clicked.connect (() => move_provider (captured_id, -1));
+            row.add_prefix (up_btn);
+
+            var down_btn = new Gtk.Button.from_icon_name ("go-down-symbolic");
+            down_btn.valign = Gtk.Align.CENTER;
+            down_btn.add_css_class ("flat");
+            down_btn.sensitive = (index < _provider_order.length - 1);
+            down_btn.tooltip_text = _("Move down");
+            down_btn.clicked.connect (() => move_provider (captured_id, 1));
+            row.add_prefix (down_btn);
+
+            var sw = new Gtk.Switch ();
+            sw.valign = Gtk.Align.CENTER;
+            _settings.bind ("lyrics-%s-enabled".printf (info.id), sw, "active", SettingsBindFlags.DEFAULT);
+            row.add_suffix (sw);
+            row.activatable_widget = sw;
+
+            return row;
+        }
+
+        private void move_provider (string id, int delta) {
+            int idx = -1;
+            for (int i = 0; i < _provider_order.length; i++)
+                if (_provider_order[i] == id) { idx = i; break; }
+            if (idx < 0) return;
+            int new_idx = idx + delta;
+            if (new_idx < 0 || new_idx >= _provider_order.length) return;
+            var tmp = _provider_order[idx];
+            _provider_order[idx] = _provider_order[new_idx];
+            _provider_order[new_idx] = tmp;
+            _settings.set_string ("lyrics-provider-order", string.joinv (",", _provider_order));
+            build_provider_rows ();
         }
 
         public uint audio_sink {
             get {
                 var app = (Application) GLib.Application.get_default ();
                 var sink_name = app.player.audio_sink;
-                for (int i = 0; i < _audio_sinks.length; i++) {
-                    if (sink_name == _audio_sinks[i].name)
-                        return i;
-                }
+                for (int i = 0; i < _audio_sinks.length; i++)
+                    if (sink_name == _audio_sinks[i].name) return i;
                 return _audio_sinks.length > 0 ? 0 : -1;
             }
             set {
@@ -111,8 +227,9 @@ namespace G4 {
                     app.player.audio_sink = _audio_sinks[value].name;
                 }
             }
-       }
-      public static void apply_ui_scale (double scale) {
+        }
+
+        public static void apply_ui_scale (double scale) {
             var win = Window.get_default ();
             if (win == null) return;
             var css = new Gtk.CssProvider ();
@@ -121,8 +238,7 @@ namespace G4 {
             var display = Gdk.Display.get_default ();
             if (display != null) {
                 Gtk.StyleContext.add_provider_for_display (
-                    (!)display,
-                    css,
+                    (!)display, css,
                     Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
                 );
             }

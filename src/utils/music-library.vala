@@ -7,7 +7,8 @@ namespace G4 {
         public const uint TITLE = 3;
         public const uint RECENT = 4;
         public const uint SHUFFLE = 5;
-        public const uint MAX = 5;
+        public const uint SHUFFLE_KEEP_CURRENT = 6;
+        public const uint MAX = 6;
     }
 
     public class Album : Music {
@@ -512,6 +513,8 @@ namespace G4 {
     public void sort_music_array (GenericArray<Music> arr, uint sort_mode) {
         if (sort_mode == SortMode.SHUFFLE)
             Music.shuffle_order (arr);
+        else if (sort_mode == SortMode.SHUFFLE_KEEP_CURRENT)
+            Music.shuffle_order_after_first (arr);
 
         CompareFunc<Music> compare = Music.compare_by_order;
         switch (sort_mode) {

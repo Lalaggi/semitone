@@ -353,6 +353,17 @@ namespace G4 {
                 arr[i]._order = i;
             }
         }
+
+        public static void shuffle_order_after_first (GenericArray<Music> arr) {
+            if (arr.length <= 1) return;
+            for (var i = arr.length - 1; i > 1; i--) {
+                var r = Random.int_range (1, i + 1);
+                var s = arr[i];
+                arr[i] = arr[r];
+                arr[r] = s;
+                arr[i]._order = i;
+            }
+        }
     }
 
     public bool is_music_type (string content_type) {

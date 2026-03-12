@@ -5,6 +5,8 @@
     <property name="default-width">480</property>
     <child>
       <object class="AdwPreferencesPage">
+        <property name="title" translatable="yes">General</property>
+        <property name="icon-name">preferences-system-symbolic</property>
         <child>
           <object class="AdwPreferencesGroup">
             <property name="title" translatable="yes">General</property>
@@ -26,7 +28,7 @@
                 </child>
               </object>
             </child>
-              <child>
+            <child>
               <object class="AdwActionRow" id="scale_row">
                 <property name="icon-name">zoom-fit-best-symbolic</property>
                 <property name="title" translatable="yes">Interface scale</property>
@@ -69,7 +71,7 @@
                 </child>
               </object>
             </child>
-             <child>
+            <child>
               <object class="AdwActionRow">
                 <property name="icon-name">input-mouse-symbolic</property>
                 <property name="title" translatable="yes">Single click to activate item</property>
@@ -97,7 +99,7 @@
         </child>
         <child>
           <object class="AdwPreferencesGroup">
-          <property name="title" translatable="yes">Library</property>
+            <property name="title" translatable="yes">Library</property>
             <child>
               <object class="AdwActionRow">
                 <property name="icon-name">folder-symbolic</property>
@@ -139,12 +141,12 @@
         </child>
         <child>
           <object class="AdwPreferencesGroup">
-          <property name="title" translatable="yes">Playback</property>
+            <property name="title" translatable="yes">Playback</property>
             <child>
               <object class="AdwExpanderRow" id="peak_row">
                 <property name="icon-name">edit-select-symbolic</property>
                 <property name="title" translatable="yes">Show audio peak level</property>
-              	<property name="show-enable-switch">true</property>
+                <property name="show-enable-switch">true</property>
                 <child>
                   <object class="AdwActionRow">
                     <property name="title" translatable="yes">Display characters</property>
@@ -197,17 +199,23 @@
             </child>
           </object>
         </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesPage">
+        <property name="title" translatable="yes">Lyrics</property>
+        <property name="icon-name">text-x-generic-symbolic</property>
         <child>
           <object class="AdwPreferencesGroup">
-            <property name="title" translatable="yes">Lyrics</property>
+            <property name="title" translatable="yes">Behaviour</property>
             <child>
               <object class="AdwActionRow">
-                <property name="icon-name">audio-x-generic-symbolic</property>
-                <property name="title">BetterLyrics</property>
-                <property name="subtitle" translatable="yes">Word-timed lyrics via BetterLyrics API</property>
-                <property name="activatable_widget">betterlyrics_btn</property>
+                <property name="icon-name">media-playlist-shuffle-symbolic</property>
+                <property name="title" translatable="yes">Prefer synced lyrics</property>
+                <property name="subtitle" translatable="yes">Always try synced providers first; fall back to plain if none found</property>
+                <property name="activatable_widget">lyrics_prefer_synced_btn</property>
                 <child>
-                  <object class="GtkSwitch" id="betterlyrics_btn">
+                  <object class="GtkSwitch" id="lyrics_prefer_synced_btn">
                     <property name="valign">center</property>
                   </object>
                 </child>
@@ -215,12 +223,12 @@
             </child>
             <child>
               <object class="AdwActionRow">
-                <property name="icon-name">audio-x-generic-symbolic</property>
-                <property name="title">SimpMusic</property>
-                <property name="subtitle" translatable="yes">Word-timed lyrics for YouTube Music tracks</property>
-                <property name="activatable_widget">simpmusic_btn</property>
+                <property name="icon-name">view-sort-ascending-symbolic</property>
+                <property name="title" translatable="yes">Auto-select best lyrics</property>
+                <property name="subtitle" translatable="yes">Pick highest-scoring lyrics; disable to use priority order</property>
+                <property name="activatable_widget">lyrics_auto_select_btn</property>
                 <child>
-                  <object class="GtkSwitch" id="simpmusic_btn">
+                  <object class="GtkSwitch" id="lyrics_auto_select_btn">
                     <property name="valign">center</property>
                   </object>
                 </child>
@@ -228,15 +236,38 @@
             </child>
             <child>
               <object class="AdwActionRow">
-                <property name="icon-name">audio-x-generic-symbolic</property>
-                <property name="title">LRCLib</property>
-                <property name="subtitle" translatable="yes">Synced and plain lyrics via LRCLib</property>
-                <property name="activatable_widget">lrclib_btn</property>
+                <property name="icon-name">view-refresh-symbolic</property>
+                <property name="title" translatable="yes">Allow plain text fallback</property>
+                <property name="subtitle" translatable="yes">If no synced lyrics found, show plain text instead of nothing</property>
+                <property name="activatable_widget">lyrics_plain_fallback_btn</property>
                 <child>
-                  <object class="GtkSwitch" id="lrclib_btn">
+                  <object class="GtkSwitch" id="lyrics_plain_fallback_btn">
                     <property name="valign">center</property>
                   </object>
                 </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup" id="lyrics_providers_group">
+            <property name="title" translatable="yes">Providers</property>
+            <property name="description" translatable="yes">Drag to reorder priority. Enable "Auto-select" to let scoring pick the best.</property>
+            <child>
+              <object class="AdwActionRow" id="lyrics_auto_indicator">
+                <property name="title" translatable="yes">Auto mode is ON</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title" translatable="yes">API Keys</property>
+            <property name="description" translatable="yes">Store as plain text in ~/.config/semitone/</property>
+            <child>
+              <object class="AdwActionRow">
+                <property name="title">Musixmatch</property>
+                <property name="subtitle" translatable="yes">musixmatch-api-key</property>
               </object>
             </child>
           </object>
