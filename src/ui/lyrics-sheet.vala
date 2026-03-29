@@ -23,6 +23,7 @@ namespace G4 {
         private Gtk.Label _provider_label;
         private Gtk.Label _offset_label;
         private Gtk.Box _offset_box;
+        private Gtk.Box _box;
         private int64 _offset_ms = 0;
         private string _current_uri = "";
         private string _current_raw = "";
@@ -43,8 +44,9 @@ namespace G4 {
         public LyricsSheet (Application app) {
             _app = app;
 
-            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
-            box.height_request = 900;
+            _box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            _box.vexpand = true;
+            _box.valign = Gtk.Align.FILL;
 
             var header = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
             header.add_css_class ("toolbar");
@@ -55,17 +57,18 @@ namespace G4 {
             title.halign = Gtk.Align.CENTER;
             title.hexpand = true;
             header.append (title);
-            box.append (header);
+            _box.append (header);
 
             _provider_label = new Gtk.Label ("");
             _provider_label.add_css_class ("dim-label");
             _provider_label.add_css_class ("caption");
             _provider_label.margin_bottom = 4;
-            box.append (_provider_label);
+            _box.append (_provider_label);
 
             _list_box = new Gtk.ListBox ();
             _list_box.selection_mode = Gtk.SelectionMode.NONE;
             _list_box.vexpand = true;
+            _list_box.valign = Gtk.Align.FILL;
             _list_box.margin_start = 16;
             _list_box.margin_end = 16;
             _list_box.margin_top = 8;
@@ -85,9 +88,10 @@ namespace G4 {
             _scroll = new Gtk.ScrolledWindow ();
             _scroll.child = _list_box;
             _scroll.vexpand = true;
+            _scroll.valign = Gtk.Align.FILL;
             _scroll.hscrollbar_policy = Gtk.PolicyType.NEVER;
             _scroll.vscrollbar_policy = Gtk.PolicyType.AUTOMATIC;
-            box.append (_scroll);
+            _box.append (_scroll);
 
             // ── Bottom bar ───────────────────────────────────────────
             var bar = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
@@ -144,17 +148,25 @@ namespace G4 {
             edit_btn.clicked.connect (open_edit_dialog);
             bar.append (edit_btn);
 
-            box.append (bar);
+            _box.append (bar);
 
             bottom_sheet = new Adw.BottomSheet ();
-            bottom_sheet.sheet = box;
+            bottom_sheet.sheet = _box;
             bottom_sheet.modal = true;
 
             bottom_sheet.notify["open"].connect (() => {
                 if (bottom_sheet.open) {
+                    update_box_height ();
+                    if (_resize_timeout == 0) {
+                        _resize_timeout = GLib.Timeout.add (100, on_resize_timeout);
+                    }
                     _app.player.position_updated.connect (on_position_updated);
                     load_lyrics.begin ();
                 } else {
+                    if (_resize_timeout != 0) {
+                        GLib.Source.remove (_resize_timeout);
+                        _resize_timeout = 0;
+                    }
                     _app.player.position_updated.disconnect (on_position_updated);
                 }
             });
@@ -172,6 +184,24 @@ namespace G4 {
 
         public void open () {
             bottom_sheet.open = true;
+        }
+
+        private void update_box_height () {
+            var win = bottom_sheet.get_root () as Gtk.Window;
+            if (win != null) {
+                var win_height = ((!)win).get_height ();
+                var sheet_height = (int) (win_height * 0.85);
+                _box.height_request = sheet_height;
+            }
+        }
+
+        private uint _resize_timeout = 0;
+
+        private bool on_resize_timeout () {
+            if (bottom_sheet.open) {
+                update_box_height ();
+            }
+            return true;
         }
 
         // ── Offset ───────────────────────────────────────────────────

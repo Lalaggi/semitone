@@ -232,6 +232,7 @@ namespace G4 {
         public static void apply_ui_scale (double scale) {
             var win = Window.get_default ();
             if (win == null) return;
+            // Scale icon sizes and apply zoom
             var css = new Gtk.CssProvider ();
             css.load_from_string ("window { -gtk-icon-size: %dpx; } .semitone-root { zoom: %g; }".printf (
                 (int)(16 * scale), scale));

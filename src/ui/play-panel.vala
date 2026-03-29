@@ -145,14 +145,15 @@ music_box.append (utility_bar);
         }
 
         public void size_to_change (int width, int height) {
+            var scale = this.scale_factor;
             var max_size = int.max (width * 3 / 4, music_cover.pixel_size);
             var margin_horz = (width - max_size) / 2;
-            var margin_cover = int.max (margin_horz, 32);
+            var margin_cover = int.max (margin_horz, (int) (32 * scale));
             music_cover.margin_start = margin_cover;
             music_cover.margin_end = margin_cover;
 
-            var margin_bar = int.max (margin_horz / 2, 16);
-            var spacing = (height - 540).clamp (8, 16);
+            var margin_bar = int.max (margin_horz / 2, (int) (16 * scale));
+            var spacing = (int) (12 * scale);
             _play_bar.margin_start = margin_bar;
             _play_bar.margin_end = margin_bar;
             _play_bar.margin_top = spacing;

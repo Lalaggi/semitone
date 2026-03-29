@@ -136,6 +136,8 @@ namespace G4 {
             _library_uri = settings.get_string ("library-uri");
             initialize_library_page ();
             load_tracks_list ();
+            header_bar.pack_end (_tracks_play_btn);
+            header_bar.pack_end (_tracks_shuffle_btn);
         }
 
         public MusicList current_list {
@@ -291,8 +293,6 @@ namespace G4 {
                 play_current_list (0, true);
             });
 
-            header_bar.pack_end (_tracks_play_btn);
-            header_bar.pack_end (_tracks_shuffle_btn);
         }
 
         private void bind_music_list_properties (MusicList list, bool editable = false) {
