@@ -173,18 +173,7 @@
                 </child>
               </object>
             </child>
-            <child>
-              <object class="AdwActionRow">
-                <property name="icon-name">media-playlist-repeat-symbolic</property>
-                <property name="title" translatable="yes">Enable gapless playback</property>
-                <property name="activatable_widget">gapless_btn</property>
-                <child>
-                  <object class="GtkSwitch" id="gapless_btn">
-                    <property name="valign">center</property>
-                  </object>
-                </child>
-              </object>
-            </child>
+
             <child>
               <object class="AdwComboRow" id="replaygain_row">
                 <property name="icon-name">audio-volume-high-symbolic</property>

@@ -53,6 +53,10 @@ namespace G4 {
             shuffle_btn.add_css_class ("flat");
             shuffle_btn.active = app.queue_shuffled;
             shuffle_btn.opacity = app.queue_shuffled ? 1.0 : 0.5;
+            app.notify["queue-shuffled"].connect (() => {
+                shuffle_btn.active = app.queue_shuffled;
+                shuffle_btn.opacity = app.queue_shuffled ? 1.0 : 0.5;
+            });
             shuffle_btn.toggled.connect (() => {
                 app.queue_shuffled = shuffle_btn.active;
                 if (shuffle_btn.active) {

@@ -48,8 +48,6 @@ namespace G4 {
         [GtkChild]
         unowned Gtk.Switch rotate_btn;
         [GtkChild]
-        unowned Gtk.Switch gapless_btn;
-        [GtkChild]
         unowned Adw.ComboRow replaygain_row;
         [GtkChild]
         unowned Adw.ComboRow audiosink_row;
@@ -103,7 +101,7 @@ namespace G4 {
 
             replaygain_row.model = new Gtk.StringList ({_("Never"), _("Track"), _("Album")});
             _settings.bind ("replay-gain", replaygain_row, "selected", SettingsBindFlags.DEFAULT);
-            _settings.bind ("gapless-playback", gapless_btn, "active", SettingsBindFlags.DEFAULT);
+
             _settings.bind ("show-peak", peak_row, "enable_expansion", SettingsBindFlags.DEFAULT);
             _settings.bind ("peak-characters", peak_entry, "text", SettingsBindFlags.DEFAULT);
 

@@ -20,7 +20,6 @@ namespace RepeatMode {
         private Gtk.FilterListModel _current_list = new Gtk.FilterListModel (null, null);
         private ListStore _music_queue = new ListStore (typeof (Music));
         private GenericArray<Music> _queue_original_order = new GenericArray<Music> ();
-        private StringBuilder _next_uri = new StringBuilder ();
         private GstPlayer _player = new GstPlayer ();
         private Settings _settings;
         private uint _sort_mode = SortMode.TITLE;
@@ -60,8 +59,6 @@ namespace RepeatMode {
 
             _player.end_of_stream.connect (on_player_end);
             _player.error.connect (on_player_error);
-            _player.next_uri_request.connect (on_player_next_uri_request);
-            _player.next_uri_start.connect (on_player_next_uri_start);
             _player.state_changed.connect (on_player_state_changed);
             _player.tag_parsed.connect (on_player_tag_parsed);
 
@@ -81,7 +78,7 @@ namespace RepeatMode {
             settings.bind ("sort-mode", this, "sort-mode", SettingsBindFlags.DEFAULT);
             settings.bind ("monitor-changes", _loader, "monitor-changes", SettingsBindFlags.DEFAULT);
             settings.bind ("remote-thumbnail", _thumbnailer, "remote-thumbnail", SettingsBindFlags.DEFAULT);
-            settings.bind ("gapless-playback", _player, "gapless", SettingsBindFlags.DEFAULT);
+
             settings.bind ("replay-gain", _player, "replay-gain", SettingsBindFlags.DEFAULT);
             settings.bind ("audio-sink", _player, "audio-sink", SettingsBindFlags.DEFAULT);
             settings.bind ("volume", _player, "volume", SettingsBindFlags.DEFAULT);
@@ -182,7 +179,6 @@ namespace RepeatMode {
                 _current_index = value;
                 _current_list_size = _current_list.get_n_items ();
                 index_changed (value, _current_list_size);
-                update_next_item ();
             }
         }
 
@@ -650,21 +646,6 @@ private void on_player_end () {
 
         private void on_player_error (Error err) {
             Window.get_default ()?.show_toast (err.message);
-            if (!_player.gapless) {
-                on_player_end ();
-            }
-        }
-        private string? on_player_next_uri_request () {
-            //  This is NOT called in main UI thread
-            lock (_next_uri) {
-              if (_repeat_mode != RepeatMode.ONE)
-                _current_uri = _next_uri.str;
-                //  next_uri_start will be received soon later
-                return _current_uri;
-            }
-        }
-        private void on_player_next_uri_start () {
-            //  Received after next_uri_request
             on_player_end ();
         }
 
@@ -764,14 +745,6 @@ private void on_player_end () {
                 _current_index = index;
                 _current_list_size = size;
                 index_changed (index, size);
-            }
-            update_next_item ();
-        }
-
-        private void update_next_item () {
-            var next_music = (Music?) _current_list.get_item (_current_index + 1);
-            lock (_next_uri) {
-                _next_uri.assign (next_music?.uri ?? "");
             }
         }
     }

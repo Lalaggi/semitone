@@ -30,8 +30,6 @@ namespace G4 {
         private Gst.ClockTime _duration = Gst.CLOCK_TIME_NONE;
         private Gst.ClockTime _position = Gst.CLOCK_TIME_NONE;
         private int _last_error_code = 0;
-        private ulong _about_to_finish_id = 0;
-        private int _next_uri_requested = 0;
         private double _last_peak = 0;
         private LevelCalculator _peak_calculator = new LevelCalculator ();
         private Gst.State _state = Gst.State.NULL;
@@ -46,8 +44,6 @@ namespace G4 {
         public signal void error (Error error);
         public signal void end_of_stream ();
         public signal void position_updated (Gst.ClockTime position);
-        public signal string? next_uri_request ();
-        public signal void next_uri_start ();
         public signal void state_changed (Gst.State state);
         public signal void tag_parsed (string? uri, Gst.TagList? tags);
 
@@ -80,24 +76,6 @@ namespace G4 {
                 Source.remove (_timer_handle);
             _peak_calculator.clear ();
             _pipeline?.set_state (Gst.State.NULL);
-        }
-
-        public bool gapless {
-            get {
-                return _about_to_finish_id != 0;
-            }
-            set {
-                if (_pipeline != null) {
-                    var pipeline = (!)_pipeline;
-                    if (_about_to_finish_id != 0) {
-                        pipeline.disconnect (_about_to_finish_id);
-                        _about_to_finish_id = 0;
-                    }
-                    if (value) {
-                        _about_to_finish_id = pipeline.about_to_finish.connect (on_stream_to_finish);
-                    }
-                }
-            }
         }
 
         public bool playing {
@@ -321,19 +299,8 @@ namespace G4 {
             _peak_calculator.clear ();
             _tag_list = null;
             _tag_parsed = false;
-            if (AtomicInt.compare_and_exchange (ref _next_uri_requested, 1, 0)) {
-                next_uri_start ();
-            }
             parse_duration ();
             parse_position ();
-        }
-
-        private void on_stream_to_finish () {
-            var next_uri = next_uri_request ();
-            if (next_uri != null && ((!)next_uri).length > 0) {
-                AtomicInt.set (ref _next_uri_requested, 1);
-                uri = (!)next_uri;
-            }
         }
 
         private void parse_duration () {
