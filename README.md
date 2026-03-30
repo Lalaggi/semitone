@@ -39,7 +39,7 @@ sudo dnf install vala meson gtk4-devel libadwaita-devel gstreamer-devel gstreame
 
 ### Flatpak
 
-Pre-built flatpak packages are available in the [Releases](https://codeberg.org/el1lovescomputers/semitone/releases). May be slightly behind the latest version.
+Pre-built flatpak packages are available in the [flatpak-downloads](https://codeberg.org/el1lovescomputers/Semitone/src/branch/main/flatpak-downloads). May be slightly behind the latest version.
 
 ### Recommended: [gitpkg](https://codeberg.org/el1lovescomputers/gitpkg)
 
