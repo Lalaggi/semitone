@@ -85,7 +85,6 @@ namespace G4 {
                 tags = parse_demux_tags (stream, (!)demux_name);
             }
         } catch (Error e) {
-            //  print ("Parse demux %s: %s\n", file.get_parse_name (), e.message);
         }
         return tags;
     }
@@ -163,7 +162,6 @@ namespace G4 {
                 if (Memory.cmp (foot, "TAG", 3) == 0) {
                     var tags2 = Gst.Tag.List.new_from_id3v1 (foot);
                     tags = merge_tags (tags, tags2);
-                    //  print ("ID3v1 parsed: %d\n", tags2.n_tags ());
                     seek_full (stream, -128);
                 } else if (Memory.cmp (foot[128-32:], "APETAGEX", 8) == 0) {
                     var size = read_uint32_le (foot, 128 - 32 + 12) + 32;
@@ -174,7 +172,6 @@ namespace G4 {
                     //  APEv2 is better than others, do REPLACE merge
                     tags = merge_tags (tags, tags2, Gst.TagMergeMode.REPLACE);
                     apev2_found = ! tags2.is_empty ();
-                    //  print ("APEv2 parsed: %d\n", tags2.n_tags ());
                     seek_full (stream, - (int) size);
                 } else if (Memory.cmp (foot[128-9:], "LYRICS200", 9) == 0) {
                     var size = read_decimal_uint (foot[128-15:128-9]);
@@ -183,7 +180,6 @@ namespace G4 {
                     read_full (stream, data);
                     var tags2 = parse_lyrics200_tags (data);
                     tags = merge_tags (tags, tags2, apev2_found ? Gst.TagMergeMode.KEEP : Gst.TagMergeMode.REPLACE);
-                    //  print ("LYRICS200 parsed: %d\n", tags2.n_tags ());
                     seek_full (stream, - (int) (size + 15));
                 } else {
                     break;
@@ -210,7 +206,6 @@ namespace G4 {
                 read_full (stream, head);
                 var type = head[0] & 0x7f;
                 var size = ((uint32) (head[1]) << 16) | ((uint32) (head[2]) << 8) | head[3];
-                //  print ("FLAC block: %d, %u\n", type, size);
                 if (type == 4) {
                     var data = new_uint8_array (size + 4);
                     read_full (stream, data[4:]);
@@ -327,7 +322,6 @@ namespace G4 {
                 if (sample != (Gst.Sample)null) {
                     tags.add (Gst.TagMergeMode.REPLACE, tag, sample);
                 }
-                //  print (@"Tag: $tag=$(data.length)\n");
             }
         } else {
             print ("MP4: unknown image type\n");
@@ -344,11 +338,9 @@ namespace G4 {
                 var n2 = n & 0xffff;
                 if (n1 > 0) {
                     tags.add (Gst.TagMergeMode.REPLACE, tag1, n1);
-                    //  print (@"Tag: $tag1=$n1\n");
                 }
                 if (n2 > 0) {
                     tags.add (Gst.TagMergeMode.REPLACE, tag2, n2);
-                    //  print (@"Tag: $tag2=$n2\n");
                 }
             }
         } else {
@@ -379,7 +371,6 @@ namespace G4 {
         if (str != null && ((!)str).length > 0) {
             var value = (!)str;
             tags.add (Gst.TagMergeMode.REPLACE, tag, value);
-            //  print (@"Tag: $tag=$value\n");
         } else {
             print ("MP4: unknown string type\n");
         }
@@ -657,7 +648,6 @@ namespace G4 {
                 if (caps != null) {
                     return sample;
                 }
-                //  print (@"unknown image tag: $(tag)\n");
             }
         }
         return null;

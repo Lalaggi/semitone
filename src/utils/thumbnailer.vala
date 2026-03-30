@@ -34,7 +34,6 @@ namespace G4 {
             _cache[key] = value;
             _queue.push_tail (key);
             _size += size;
-            //  print (@"Cache $(_cache.length)/$(_queue.length) items, $_size bytes\n");
         }
 
         public bool remove (string key) {
@@ -104,8 +103,6 @@ namespace G4 {
 
             var paintable0 = find (music, size);
             if (is_small && paintable0 != null) {
-                //  Check if already exist with changed cover_key
-                //  print ("Already exist: %s\n", music.cover_key);
                 return paintable0;
             }
 
@@ -203,7 +200,6 @@ namespace G4 {
             lock (_album_covers) {
                 if (_album_covers.lookup_extended (album_key, out key, out uri)) {
                     cover_key = uri;
-                    //  print ("Same album cover: %s\n", album_key);
                 } else {
                     _album_covers[album_key] = cover_key;
                 }

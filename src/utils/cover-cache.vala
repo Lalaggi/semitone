@@ -41,7 +41,6 @@ namespace G4 {
                     unowned var ctype = info.get_content_type () ?? "";
                     unowned var name = info.get_name ();
                     if (is_cover_file (ctype, name)) {
-                        //  print ("Find external cover: %s\n", name);
                         return name;
                     }
                 }

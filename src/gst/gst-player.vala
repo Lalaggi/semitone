@@ -194,7 +194,6 @@ namespace G4 {
 
         public void seek (Gst.ClockTime position) {
             if (_pipeline != null && !_seeking) {
-                //  print ("Seek: %g -> %g\n", to_second (_position), to_second (position));
                 _seeking = ((!)_pipeline).seek_simple (Gst.Format.TIME, Gst.SeekFlags.ACCURATE | Gst.SeekFlags.FLUSH, (int64) position);
             }
         }
@@ -284,7 +283,6 @@ namespace G4 {
             if (old != state && _state != state) {
                 _state = state;
                 state_changed (state);
-                //  print (@"State changed: $old -> $state\n");
             }
             if (_timer_handle == 0 && state == Gst.State.PLAYING) {
                 _timer_handle = Timeout.add (100, parse_position);
