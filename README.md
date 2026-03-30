@@ -37,6 +37,10 @@ sudo dnf install vala meson gtk4-devel libadwaita-devel gstreamer-devel gstreame
 
 ## Installation
 
+### Flatpak
+
+Pre-built flatpak packages are available in the [Releases](https://codeberg.org/el1lovescomputers/semitone/releases). May be slightly behind the latest version.
+
 ### Recommended: [gitpkg](https://codeberg.org/el1lovescomputers/gitpkg)
 
 ```bash
@@ -49,8 +53,7 @@ gitpkg install el1lovescomputers/semitone --supplier "codeberg.org"
 ```bash
 git clone https://codeberg.org/el1lovescomputers/semitone
 cd semitone
-meson setup builddir --buildtype=release
-ninja -C builddir install
+./build.sh
 ```
 
 ## Reporting Issues
