@@ -1,5 +1,6 @@
 .flatpak-builder
 build
 builddir
-flatpak-build
-*.flatpak
+flatpak-build*
+flatpak-repo*
+my-repo

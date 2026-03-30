@@ -3,10 +3,27 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "=== Building Flatpak bundle ==="
-flatpak-builder --force-clean --user --install-deps-from=flathub flatpak-build pkgs/flatpak/org.codeberg.el1lovescomputers.semitone.json
-flatpak build-export flatpak-repo flatpak-build
-flatpak build-bundle flatpak-repo flatpak-downloads/semitone.flatpak org.codeberg.el1lovescomputers.semitone
+if ! ls /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null; then
+    echo "Installing qemu-user-static-binfmt for aarch64 cross-compilation..."
+    paru -S --noconfirm qemu-user-static-binfmt || sudo pacman -S --noconfirm qemu-user-static-binfmt
+fi
+
+echo "=== Building Flatpak x86-64 bundle ==="
+flatpak-builder --force-clean --user --install-deps-from=flathub --arch=x86_64 flatpak-build-x64 pkgs/flatpak/org.codeberg.el1lovescomputers.semitone.json
+flatpak build-export flatpak-repo-x64 flatpak-build-x64
+flatpak build-bundle flatpak-repo-x64 flatpak-downloads/Semitone-x64-64.flatpak org.codeberg.el1lovescomputers.semitone --arch=x86_64
+rm -rf flatpak-build-x64 flatpak-repo-x64
+
+echo "=== Building Flatpak arm64 bundle ==="
+flatpak install -u flathub org.gnome.Platform/aarch64/48 org.gnome.Sdk/aarch64/48 || true
+if flatpak-builder --force-clean --user --install-deps-from=flathub --arch=aarch64 flatpak-build-arm64 pkgs/flatpak/org.codeberg.el1lovescomputers.semitone.json; then
+    flatpak build-export flatpak-repo-arm64 flatpak-build-arm64
+    flatpak build-bundle flatpak-repo-arm64 flatpak-downloads/Semitone-arm64.flatpak org.codeberg.el1lovescomputers.semitone --arch=aarch64
+    rm -rf flatpak-build-arm64 flatpak-repo-arm64
+else
+    echo "Skipping arm64 build (requires aarch64 host or cross-compilation setup)"
+    rm -rf flatpak-build-arm64 flatpak-repo-arm64
+fi
 
 echo "=== Building and installing with ninja ==="
 meson setup build --buildtype=release --prefix=/usr
@@ -14,4 +31,5 @@ ninja -C build
 sudo ninja -C build install || { echo "Install failed - try running manually: sudo ninja -C build install"; exit 1; }
 
 echo "=== Done ==="
-echo "Flatpak bundle saved to flatpak-downloads/semitone.flatpak"
+echo "Flatpak bundles saved to flatpak-downloads/"
+echo "Download from: https://codeberg.org/el1lovescomputers/Semitone/src/branch/main/flatpak-downloads/"
