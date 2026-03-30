@@ -1,3 +1,5 @@
+<img align="left" alt="Semitone" src="assets/app.svg" width="128" />
+
 # Semitone
 
 A lightweight GTK4 music player written in Vala.
@@ -16,18 +18,7 @@ A lightweight GTK4 music player written in Vala.
 - **Formats** — Supports most audio formats via GStreamer (MP3, FLAC, OGG, OPUS, MP4, WAV, etc.)
 - **Remote** — Samba and other remote protocols via GIO
 
-## Installation
-
-### Recommended: [gitpkg](https://codeberg.org/el1lovescomputers/gitpkg)
-
-```bash
-curl -fsSL "https://codeberg.org/el1lovescomputers/gitpkg/raw/branch/main/install.sh" | sh
-gitpkg install el1lovescomputers/semitone --supplier "codeberg.org"
-```
-
-### From Source
-
-Dependencies:
+## Dependencies
 
 **Arch Linux:**
 ```bash
@@ -44,7 +35,17 @@ sudo apt install vala meson libgtk-4-dev libadwaita-1-dev libgstreamer1.0-dev li
 sudo dnf install vala meson gtk4-devel libadwaita-devel gstreamer-devel gstreamer-plugins-base-devel libsoup-devel json-glib-devel libxml2-devel
 ```
 
-Build and install:
+## Installation
+
+### Recommended: [gitpkg](https://codeberg.org/el1lovescomputers/gitpkg)
+
+```bash
+curl -fsSL "https://codeberg.org/el1lovescomputers/gitpkg/raw/branch/main/install.sh" | sh
+gitpkg install el1lovescomputers/semitone --supplier "codeberg.org"
+```
+
+### From Source
+
 ```bash
 git clone https://codeberg.org/el1lovescomputers/semitone
 cd semitone
