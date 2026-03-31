@@ -53,7 +53,8 @@ gitpkg install el1lovescomputers/semitone --supplier "codeberg.org"
 ```bash
 git clone https://codeberg.org/el1lovescomputers/semitone
 cd semitone
-./build.sh
+meson setup build --buildtype=release --prefix=/usr
+sudo ninja -C build install
 ```
 
 ## Reporting Issues
