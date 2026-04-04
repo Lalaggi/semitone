@@ -106,6 +106,10 @@
     <key name="volume" type="d">
       <default>1</default>
     </key>
+    <key name="lyrics-paxsenix-enabled" type="b">
+      <default>true</default>
+      <summary>Fetch lyrics from PaxSenix</summary>
+    </key>
     <key name="lyrics-betterlyrics-enabled" type="b">
       <default>true</default>
       <summary>Fetch lyrics from BetterLyrics</summary>
@@ -117,10 +121,6 @@
     <key name="lyrics-lrclib-enabled" type="b">
       <default>true</default>
       <summary>Fetch lyrics from LRCLib</summary>
-    </key>
-    <key name="lyrics-lyricsovh-enabled" type="b">
-      <default>true</default>
-      <summary>Enable Lyrics.ovh provider</summary>
     </key>
     <key name="lyrics-netease-enabled" type="b">
       <default>false</default>
@@ -151,7 +151,7 @@
       <summary>Fall back to plain text if no synced lyrics found</summary>
     </key>
     <key name="lyrics-provider-order" type="s">
-      <default>'simpmusic,lrclib,netease,lyricsovh,megalobiz,genius,musixmatch'</default>
+      <default>'paxsenix,simpmusic,lrclib,netease,megalobiz,genius,musixmatch'</default>
       <summary>Comma-separated provider priority order</summary>
     </key>
   </schema>

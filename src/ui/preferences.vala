@@ -12,18 +12,18 @@ namespace G4 {
     }
 
     private const LyricsProviderInfo[] LYRICS_PROVIDERS = {
+        { "paxsenix",    "PaxSenix",      "Synced LRC lyrics via PaxSenix"                        },
         { "betterlyrics", "BetterLyrics",  "Word-timed TTML lyrics (synced)"                    },
         { "simpmusic",    "SimpMusic",      "Word-timed lyrics for YouTube Music tracks (synced)" },
         { "lrclib",       "LRCLib",         "Synced and plain lyrics via LRCLib"                  },
         { "netease",      "NetEase",        "Synced LRC lyrics from NetEase Music"                },
-        { "lyricsovh",   "Lyrics.ovh",     "Plain text lyrics via Lyrics.ovh"                   },
         { "megalobiz",    "Megalobiz",      "Plain text lyrics via Megalobiz (scraping)"          },
         { "genius",       "Genius",         "Plain text lyrics via Genius (scraping)"             },
         { "musixmatch",   "Musixmatch",     "Plain text lyrics (requires API key)"                },
     };
 
     private const string DEFAULT_PROVIDER_ORDER =
-        "betterlyrics,simpmusic,lrclib,netease,lyricsovh,megalobiz,genius,musixmatch";
+        "paxsenix,betterlyrics,simpmusic,lrclib,netease,megalobiz,genius,musixmatch";
 
     [GtkTemplate (ui = "/com/github/lalaggi/semitone/gtk/preferences.ui")]
     public class PreferencesWindow : Adw.PreferencesWindow {

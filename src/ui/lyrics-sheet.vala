@@ -29,6 +29,16 @@ namespace G4 {
         private string _current_raw = "";
         public Adw.BottomSheet bottom_sheet;
 
+        private const int PROVIDER_TIMEOUT_MS = 15000;
+        private const int PROVIDER_FAIL_TIMEOUT_MS = 60000;
+        private bool _timeout_triggered = false;
+        private LyricsCandidate? _best_candidate = null;
+        private string _best_candidate_provider = "";
+        private double _best_candidate_score = 0.0;
+        private bool _loading_completed = false;
+        private GLib.Mutex _candidate_lock = GLib.Mutex ();
+        private bool _is_instrumental = false;
+
         private static Soup.Session? _http_session = null;
 
         private static Soup.Session http_session () {
@@ -77,9 +87,6 @@ namespace G4 {
                 if (!_is_synced) return;
                 var index = row.get_index ();
                 if (index >= 0 && index < _lines.length && _lines[index].time_ms >= 0) {
-                    // Subtract offset: time_ms is the lyric timestamp, but playback
-                    // position + offset is what the renderer compares against, so
-                    // seek to (time_ms - offset) to land exactly on that line.
                     var ms = _lines[index].time_ms - _offset_ms;
                     _app.player.seek (GstPlayer.from_second (ms / 1000.0));
                 }
@@ -235,12 +242,11 @@ namespace G4 {
             update_word_highlights (new_index, sec);
 
             if (new_index == old_index) return;
-            
-            // Reset the previous line to "not selected" formatting
+
             if (old_index >= 0 && old_index < _lines.length) {
                 update_word_highlights (old_index, -1);
             }
-            
+
             _current_index = new_index;
 
             var idx = 0;
@@ -320,7 +326,6 @@ namespace G4 {
 
         private void populate_list () {
             clear_list ();
-            // Show offset bar only for synced lyrics
             _offset_box.visible = _is_synced;
 
             foreach (var line in _lines) {
@@ -338,7 +343,6 @@ namespace G4 {
                     line_label.add_css_class (line.is_bg ? "lyrics-word-bg" : "lyrics-word");
                     line_label.set_label (build_line_markup (line, -1.0));
                 } else {
-                    // Plain unsynced — left aligned, normal size
                     line_label.justify = Gtk.Justification.LEFT;
                     line_label.halign = Gtk.Align.START;
                     line_label.margin_top = 2;
@@ -587,7 +591,6 @@ namespace G4 {
 
         // ── Helpers ──────────────────────────────────────────────────
 
-        // Returns true and populates _lines if any synced format parsed successfully
         private bool try_parse_synced (string raw) {
             _lines = parse_rich_sync (raw);
             if (_lines.length > 0) return true;
@@ -609,20 +612,7 @@ namespace G4 {
             }
         }
 
-        // ── Main load ────────────────────────────────────────────────
-
-        // ── Lyrics quality scoring ───────────────────────────────────
-        //
-        // Format tier (base score, higher = better):
-        //   richsync (word-timed LRC)  = 40
-        //   ttml (word-timed XML)      = 40
-        //   lrc (line-timed)           = 20
-        //   plain                      =  0
-        //
-        // Completion bonus: +0..10 based on (lines / track_duration_secs * 4) capped at 10.
-        // Provider order bonus: -0.1 per position in user's priority list (tie-breaker only).
-        //
-        // The result with the highest total score wins.
+        // ── Lyrics quality scoring ────────────────────────────────────
 
         private struct LyricsCandidate {
             public string raw;
@@ -633,9 +623,10 @@ namespace G4 {
         }
 
         private double score_candidate (LyricLine[] lines, bool is_synced, string raw, int provider_index, string provider_name) {
-            // Provider bonus - prefer specific high-quality providers
             double provider_bonus = 0.0;
-            if (provider_name == "SimpMusic")
+            if (provider_name == "PaxSenix")
+                provider_bonus = 16.0;
+            else if (provider_name == "SimpMusic")
                 provider_bonus = 15.0;
             else if (provider_name == "BetterLyrics")
                 provider_bonus = 14.0;
@@ -646,29 +637,82 @@ namespace G4 {
             else if (provider_name == "Musixmatch")
                 provider_bonus = 3.0;
 
-            // Format tier
             double format_score = 0.0;
             if (is_synced) {
                 if (raw.contains ("<tt") || raw.contains ("<body"))
-                    format_score = 40.0;   // TTML
+                    format_score = 40.0;
                 else if (lines.length > 0 && lines[0].words.length > 0)
-                    format_score = 40.0;   // richsync (word-timed LRC)
+                    format_score = 40.0;
                 else
-                    format_score = 20.0;   // plain LRC
+                    format_score = 20.0;
             }
 
-            // Completion bonus: ratio of non-empty lines, scaled 0-10
             int non_empty = 0;
             foreach (var l in lines)
                 if (l.text.strip ().length > 0) non_empty++;
             double completion = lines.length > 0 ? (double) non_empty / lines.length : 0.0;
             double completion_score = completion * 10.0;
 
-            // Provider order tie-breaker (lower index = slightly higher score)
             double order_score = -(provider_index * 0.1);
 
             return provider_bonus + format_score + completion_score + order_score;
         }
+
+        private void process_candidate (LyricsCandidate c) {
+            _candidate_lock.lock ();
+            bool is_best = false;
+
+            if (_best_candidate == null || c.score > _best_candidate_score) {
+                _best_candidate = c;
+                _best_candidate_score = c.score;
+                _best_candidate_provider = c.provider;
+                is_best = true;
+            }
+            bool was_timeout = _timeout_triggered;
+            _candidate_lock.unlock ();
+
+            if (is_best) {
+                log ("New best candidate: %s (score=%.1f)".printf (c.provider, c.score));
+
+                if (was_timeout) {
+                    log ("Updating display with better background result: %s".printf (c.provider));
+                    _current_raw = c.raw;
+                    _lines = c.lines;
+                    _is_synced = c.is_synced;
+                    set_provider (c.provider);
+                    save_cache (_current_uri, c.raw, c.provider, 0);
+                    populate_list ();
+                }
+            }
+        }
+
+        private void trigger_timeout () {
+            _candidate_lock.lock ();
+            if (_timeout_triggered) {
+                _candidate_lock.unlock ();
+                return;
+            }
+            _timeout_triggered = true;
+            var best = _best_candidate;
+            _candidate_lock.unlock ();
+
+            log ("=== PROVIDER TIMEOUT (15s) ===");
+            if (best != null) {
+                var b = (!)best;
+                log ("Using best so far: %s (score=%.1f, %d lines)".printf (
+                    b.provider, b.score, b.lines.length));
+                _current_raw = b.raw;
+                _lines = b.lines;
+                _is_synced = b.is_synced;
+                set_provider (b.provider);
+                save_cache (_current_uri, b.raw, b.provider, 0);
+                populate_list ();
+            } else {
+                log ("No candidates yet, waiting...");
+            }
+        }
+
+        // ── Main load ────────────────────────────────────────────────
 
         private async void load_lyrics () {
             _lines = {};
@@ -678,6 +722,12 @@ namespace G4 {
             _offset_ms = 0;
             update_offset_label ();
             show_loading ();
+
+            _timeout_triggered = false;
+            _best_candidate = null;
+            _best_candidate_provider = "";
+            _best_candidate_score = 0.0;
+            _loading_completed = false;
 
             var music = _app.current_music;
             if (music == null) {
@@ -691,7 +741,6 @@ namespace G4 {
             log ("Loading lyrics for: '%s' by '%s' (album: '%s')".printf (
                 m.title, m.artist, m.album));
 
-            // 1. Cache
             log ("Checking cache...");
             if (load_cache (_current_uri)) {
                 log ("Loaded from cache, %d lines".printf (_lines.length));
@@ -699,10 +748,8 @@ namespace G4 {
                 return;
             }
 
-            // Track if any provider found this track to be instrumental
-            bool is_instrumental = false;
+            _is_instrumental = false;
 
-            // 2. Local test file (dev only)
             var test_file = File.new_for_path (
                 GLib.Environment.get_home_dir () + "/Documents/LyricsTest.txt");
             if (test_file.query_exists ()) {
@@ -727,32 +774,55 @@ namespace G4 {
             }
 
             var settings = _app.settings;
-            bool prefer_synced   = settings.get_boolean ("lyrics-prefer-synced");
-            bool auto_select     = settings.get_boolean ("lyrics-auto-select");
-            bool plain_fallback  = settings.get_boolean ("lyrics-plain-fallback");
+            bool prefer_synced  = settings.get_boolean ("lyrics-prefer-synced");
+            bool auto_select    = settings.get_boolean ("lyrics-auto-select");
+            bool plain_fallback = settings.get_boolean ("lyrics-plain-fallback");
 
-            // Build provider order from settings
             var order_str = settings.get_string ("lyrics-provider-order");
             if (order_str == "")
-                order_str = "simpmusic,lrclib,netease,lyricsovh,megalobiz,genius,musixmatch";
+                order_str = "paxsenix,simpmusic,lrclib,netease,megalobiz,genius,musixmatch";
             string[] provider_order = order_str.split (",");
 
-            // ── Collect candidates from all enabled providers ─────────
-            //
-            // We gather every result, score each one, then pick the winner.
-            // LRCLib synced + plain come from one request so we handle that together.
+            var timeout_id = Timeout.add (PROVIDER_TIMEOUT_MS, () => {
+                trigger_timeout ();
+                return GLib.Source.REMOVE;
+            });
 
             LyricsCandidate[] candidates = {};
-            string? lrclib_plain_raw = null;  // held separately — only used if plain_fallback
+            string? lrclib_plain_raw = null;
 
-            // Helper: try to parse raw into lines, detect format, score, add candidate
-            // (defined inline via a local helper method below)
-
-            // Iterate providers in user-defined order
             for (int pi = 0; pi < provider_order.length; pi++) {
                 var pid = provider_order[pi].strip ();
 
-                if (pid == "betterlyrics") {
+                if (pid == "paxsenix") {
+                    if (!settings.get_boolean ("lyrics-paxsenix-enabled")) {
+                        log ("PaxSenix: disabled"); continue;
+                    }
+                    log ("Trying PaxSenix...");
+                    var duration_ms = (int) (GstPlayer.to_second (_app.player.duration) * 1000);
+                    var raw = yield fetch_paxsenix (m.title, m.artist, duration_ms, m.album);
+                    if (raw != null) {
+                        LyricLine[] parsed = {};
+                        bool synced = false;
+                        parsed = parse_lrc ((!)raw);
+                        if (parsed.length > 0) {
+                            synced = true;
+                        } else {
+                            parsed = parse_plain ((!)raw);
+                            synced = false;
+                        }
+                        if (parsed.length > 0) {
+                            var score = score_candidate (parsed, synced, (!)raw, pi, "PaxSenix");
+                            log ("PaxSenix: %d lines synced=%s score=%.1f".printf (
+                                parsed.length, synced.to_string (), score));
+                            LyricsCandidate c = { (!)raw, "PaxSenix", parsed, synced, score };
+                            process_candidate (c);
+                        }
+                    } else {
+                        log ("PaxSenix: no response");
+                    }
+
+                } else if (pid == "betterlyrics") {
                     if (!settings.get_boolean ("lyrics-betterlyrics-enabled")) {
                         log ("BetterLyrics: disabled"); continue;
                     }
@@ -764,7 +834,7 @@ namespace G4 {
                             var score = score_candidate (parsed, true, (!)raw, pi, "BetterLyrics");
                             log ("BetterLyrics: %d lines, score=%.1f".printf (parsed.length, score));
                             LyricsCandidate c = { (!)raw, "BetterLyrics", parsed, true, score };
-                            candidates += c;
+                            process_candidate (c);
                         } else {
                             log ("BetterLyrics: parse returned 0 lines");
                         }
@@ -799,7 +869,7 @@ namespace G4 {
                             log ("SimpMusic: %d lines synced=%s score=%.1f".printf (
                                 parsed.length, synced.to_string (), score));
                             LyricsCandidate c = { (!)raw, "SimpMusic", parsed, synced, score };
-                            candidates += c;
+                            process_candidate (c);
                         }
                     } else {
                         log ("SimpMusic: no response");
@@ -810,32 +880,24 @@ namespace G4 {
                         log ("LRCLib: disabled"); continue;
                     }
                     log ("Trying LRCLib...");
-                    log ("LRCLib URL: https://lrclib.net/api/get?track_name=%s&artist_name=%s&album_name=%s".printf (
-                        Uri.escape_string (m.title, null, false),
-                        Uri.escape_string (m.artist, null, false),
-                        Uri.escape_string (m.album, null, false)));
                     var result = yield fetch_lrclib (m.title, m.artist, m.album);
-                    log ("LRCLib result: %s".printf (result != null ? "not null" : "null"));
                     if (result != null) {
                         var lr = (!)result;
                         if (lr.instrumental) {
                             log ("LRCLib: track marked as instrumental");
-                            is_instrumental = true;
+                            _is_instrumental = true;
                         }
-                        log ("LRCLib synced length: %d, plain length: %d".printf (lr.synced.length, lr.plain.length));
-                        log ("LRCLib: about to parse synced lyrics");
                         if (lr.synced.length > 0) {
                             var parsed = parse_lrc (lr.synced);
-                            log ("LRCLib: parsed %d lines".printf (parsed.length));
                             if (parsed.length > 0) {
                                 var score = score_candidate (parsed, true, lr.synced, pi, "LRCLib");
                                 log ("LRCLib synced: %d lines, score=%.1f".printf (parsed.length, score));
                                 LyricsCandidate c = { lr.synced, "LRCLib", parsed, true, score };
-                                candidates += c;
+                                process_candidate (c);
                             }
                         }
                         if (lr.plain.length > 0)
-                            lrclib_plain_raw = lr.plain;  // used only if plain_fallback
+                            lrclib_plain_raw = lr.plain;
                     } else {
                         log ("LRCLib: no response");
                     }
@@ -852,28 +914,10 @@ namespace G4 {
                             var score = score_candidate (parsed, true, (!)raw, pi, "NetEase");
                             log ("NetEase: %d lines, score=%.1f".printf (parsed.length, score));
                             LyricsCandidate c = { (!)raw, "NetEase", parsed, true, score };
-                            candidates += c;
+                            process_candidate (c);
                         }
                     } else {
                         log ("NetEase: no response");
-                    }
-
-                } else if (pid == "lyricsovh") {
-                    if (!settings.get_boolean ("lyrics-lyricsovh-enabled")) {
-                        log ("Lyrics.ovh: disabled"); continue;
-                    }
-                    log ("Trying Lyrics.ovh...");
-                    var raw = yield fetch_lyricsovh (m.title, m.artist);
-                    if (raw != null) {
-                        var parsed = parse_plain ((!)raw);
-                        if (parsed.length > 0) {
-                            var score = score_candidate (parsed, false, (!)raw, pi, "Lyrics.ovh");
-                            log ("Lyrics.ovh: %d lines, score=%.1f".printf (parsed.length, score));
-                            LyricsCandidate c = { (!)raw, "Lyrics.ovh", parsed, false, score };
-                            candidates += c;
-                        }
-                    } else {
-                        log ("Lyrics.ovh: no response");
                     }
 
                 } else if (pid == "megalobiz") {
@@ -891,7 +935,7 @@ namespace G4 {
                             log ("Megalobiz: %d lines synced=%s score=%.1f".printf (
                                 parsed.length, synced.to_string (), score));
                             LyricsCandidate c = { (!)raw, "Megalobiz", parsed, synced, score };
-                            candidates += c;
+                            process_candidate (c);
                         }
                     } else {
                         log ("Megalobiz: no response");
@@ -909,7 +953,7 @@ namespace G4 {
                             var score = score_candidate (parsed, false, (!)raw, pi, "LyricGenius");
                             log ("LyricGenius: %d lines, score=%.1f".printf (parsed.length, score));
                             LyricsCandidate c = { (!)raw, "LyricGenius", parsed, false, score };
-                            candidates += c;
+                            process_candidate (c);
                         }
                     } else {
                         log ("LyricGenius: no response");
@@ -931,7 +975,7 @@ namespace G4 {
                             var score = score_candidate (parsed, false, (!)raw, pi, "Musixmatch");
                             log ("Musixmatch: %d lines, score=%.1f".printf (parsed.length, score));
                             LyricsCandidate c = { (!)raw, "Musixmatch", parsed, false, score };
-                            candidates += c;
+                            process_candidate (c);
                         }
                     } else {
                         log ("Musixmatch: no response");
@@ -939,84 +983,34 @@ namespace G4 {
                 }
             }
 
-            // ── Also add LRCLib plain as candidate if plain_fallback enabled ──
             if (plain_fallback && lrclib_plain_raw != null) {
                 var parsed = parse_plain ((!)lrclib_plain_raw);
                 if (parsed.length > 0) {
-                    // Score it at the position LRCLib sits in provider_order
                     int lrclib_pi = 0;
                     for (int pi = 0; pi < provider_order.length; pi++)
                         if (provider_order[pi].strip () == "lrclib") { lrclib_pi = pi; break; }
                     var score = score_candidate (parsed, false, (!)lrclib_plain_raw, lrclib_pi, "LRCLib");
                     log ("LRCLib plain: %d lines, score=%.1f".printf (parsed.length, score));
                     LyricsCandidate c = { (!)lrclib_plain_raw, "LRCLib", parsed, false, score };
-                    candidates += c;
+                    process_candidate (c);
                 }
             }
 
-            if (candidates.length == 0) {
+            _candidate_lock.lock ();
+            var best_candidate = _best_candidate;
+            _loading_completed = true;
+            _candidate_lock.unlock ();
+
+            Source.remove (timeout_id);
+
+            if (best_candidate == null) {
                 log ("All providers failed or returned nothing");
                 set_provider ("");
-                if (is_instrumental) {
-                    show_instrumental ();
-                } else {
-                    show_not_found ();
-                }
+                if (_is_instrumental) show_instrumental ();
+                else show_not_found ();
                 return;
             }
-
-            // ── Pick best candidate ───────────────────────────────────
-            //
-            // If prefer_synced: only consider synced candidates; if none exist and
-            // plain_fallback is on, widen to all candidates.
-            LyricsCandidate[] pool = candidates;
-            if (prefer_synced) {
-                LyricsCandidate[] synced_only = {};
-                foreach (var c in candidates)
-                    if (c.is_synced) synced_only += c;
-                if (synced_only.length > 0)
-                    pool = synced_only;
-                else if (!plain_fallback) {
-                    log ("prefer-synced: no synced results and plain-fallback disabled");
-                    set_provider ("");
-                    if (is_instrumental) {
-                        show_instrumental ();
-                    } else {
-                        show_not_found ();
-                    }
-                    return;
-                }
-                // else pool stays as all candidates (plain fallback allowed)
-            }
-
-            // If auto_select is enabled: pick highest-scoring candidate (existing behavior)
-            // If auto_select is disabled: pick first provider in order that returned results
-            LyricsCandidate best;
-            if (auto_select) {
-                // Original behavior: pick by score
-                LyricsCandidate best_by_score = pool[0];
-                foreach (var c in pool)
-                    if (c.score > best_by_score.score) best_by_score = c;
-                best = best_by_score;
-            } else {
-                // New behavior: pick first provider in order that has candidates
-                best = pool[0]; // Start with first
-                int best_order_idx = 999;
-                foreach (var c in pool) {
-                    int order_idx = 999;
-                    for (int i = 0; i < provider_order.length; i++) {
-                        if (provider_order[i].strip () == c.provider.down ()) {
-                            order_idx = i;
-                            break;
-                        }
-                    }
-                    if (order_idx < best_order_idx) {
-                        best_order_idx = order_idx;
-                        best = c;
-                    }
-                }
-                log ("Using provider order (auto-select disabled): picked %s".printf (best.provider));
-            }
+            var best = (!)best_candidate;
 
             log ("Best candidate: %s (score=%.1f, %d lines, synced=%s)".printf (
                 best.provider, best.score, best.lines.length, best.is_synced.to_string ()));
@@ -1110,6 +1104,386 @@ namespace G4 {
             }
         }
 
+        // ── PaxSenix ─────────────────────────────────────────────────
+        //
+        // API: https://lyrics.paxsenix.org
+        //   Search:  GET /apple-music/search?q=<query>
+        //            Returns JSON array of { id, displayName, displayArtist, albumName, duration (ms) }
+        //   Lyrics:  GET /apple-music/lyrics?id=<id>
+        //            Returns { type, ttmlContent, elrcMultiPerson, elrc, plain, content[] }
+        //
+        // Output format: richsync-style LRC with word timing lines, compatible with
+        // parse_lrc() + parse_word_timings() — same format used by SimpMusic richSyncLyrics.
+
+        private string paxsenix_clean_title (string title) {
+            string cleaned = title.strip ();
+            // Patterns to strip: (Official Video), [Official Audio], feat./ft., year in parens, etc.
+            string[] patterns = {
+                "\\s*\\(.*?(?:official|video|audio|lyrics?|visualizer|hd|hq|4k|remaster|remix|live|acoustic|version|edit|extended|radio|clean|explicit).*?\\)",
+                "\\s*\\[.*?(?:official|video|audio|lyrics?|visualizer|hd|hq|4k|remaster|remix|live|acoustic|version|edit|extended|radio|clean|explicit).*?\\]",
+                "\\s*\\|.*$",
+                "\\s*-\\s*(?:official|video|audio|lyrics?|visualizer).*$",
+                "\\s*\\(feat\\..*?\\)",
+                "\\s*\\(ft\\..*?\\)",
+                "\\s*feat\\..*$",
+                "\\s*ft\\..*$",
+                "\\s*\\([^)]*\\d{4}[^)]*\\)"
+            };
+            foreach (var pattern in patterns) {
+                try {
+                    var re = new Regex (pattern, RegexCompileFlags.CASELESS);
+                    cleaned = re.replace (cleaned, -1, 0, "");
+                } catch (RegexError e) {}
+            }
+            return cleaned.strip ();
+        }
+
+        private string paxsenix_clean_artist (string artist) {
+            string[] separators = { " & ", " and ", ", ", " x ", " X ", " feat. ", " feat ",
+                                    " ft. ", " ft ", " featuring ", " with " };
+            var cleaned = artist.strip ();
+            foreach (var sep in separators) {
+                var lower = cleaned.down ();
+                var sep_lower = sep.down ();
+                var idx = lower.index_of (sep_lower);
+                if (idx >= 0) {
+                    cleaned = cleaned.substring (0, idx);
+                    break;
+                }
+            }
+            return cleaned.strip ();
+        }
+
+        // Returns a scored list of (id, display_name, display_artist, duration_ms).
+        // Uses the same scoring logic as the Kotlin original: duration diff, title match,
+        // artist match, remix/mixed penalty.
+        private struct PaxSenixResult {
+            public string id;
+            public string display_name;
+            public string display_artist;
+            public int duration_ms;
+            public double score;
+        }
+
+        private async PaxSenixResult[] paxsenix_search (string query) {
+            var url = "https://lyrics.paxsenix.org/apple-music/search?q=%s".printf (
+                Uri.escape_string (query, null, false));
+            string[,] headers = { { "User-Agent", "Semitone/1.0" } };
+            var body = yield http_get_with_headers (url, headers);
+            if (body == null) return {};
+
+            PaxSenixResult[] results = {};
+            try {
+                var parser = new Json.Parser ();
+                parser.load_from_data ((!)body);
+                var arr = parser.get_root ()?.get_array ();
+                if (arr == null) return {};
+                ((!)arr).foreach_element ((a, i, node) => {
+                    var obj = node.get_object ();
+                    if (obj == null) return;
+                    var o = (!)obj;
+                    var id          = o.has_member ("id")            ? o.get_string_member ("id")            : "";
+                    var disp_name   = o.has_member ("displayName")   ? o.get_string_member ("displayName")   : "";
+                    var disp_artist = o.has_member ("displayArtist") ? o.get_string_member ("displayArtist") : "";
+                    int dur_ms      = o.has_member ("duration")      ? (int) o.get_int_member ("duration")   : 0;
+                    if (id.length > 0) {
+                        PaxSenixResult r = { id, disp_name, disp_artist, dur_ms, 0.0 };
+                        results += r;
+                    }
+                });
+            } catch (Error e) {
+                log ("PaxSenix search parse error: %s".printf (e.message));
+            }
+            return results;
+        }
+
+        private PaxSenixResult[] paxsenix_score (PaxSenixResult[] results,
+                                                  string title, string artist,
+                                                  int duration_ms) {
+            var cleanup_re_str = "\\s*\\(.*?\\)|\\s*\\[.*?\\]";
+            Regex? cleanup_re = null;
+            try { cleanup_re = new Regex (cleanup_re_str); } catch (RegexError e) {}
+
+            var clean_title  = cleanup_re != null ? ((!)cleanup_re).replace (title, -1, 0, "").down ().strip ()
+                                                  : title.down ().strip ();
+            var clean_artist = paxsenix_clean_artist (artist).down ();
+            bool target_is_remix = title.down ().contains ("remix");
+            bool target_is_mixed = title.down ().contains ("mixed");
+
+            PaxSenixResult[] scored = results;
+            for (var i = 0; i < scored.length; i++) {
+                double score = 0.0;
+                var r = scored[i];
+
+                // Duration scoring
+                if (r.duration_ms > 0) {
+                    var diff = (r.duration_ms - duration_ms).abs ();
+                    if (diff <= 2000)       score += 100.0;
+                    else if (diff <= 5000)  score += 50.0;
+                    else if (diff <= 10000) score += 10.0;
+                    else                    score -= 50.0;
+                }
+
+                // Title scoring
+                var result_clean = cleanup_re != null
+                    ? ((!)cleanup_re).replace (r.display_name, -1, 0, "").down ().strip ()
+                    : r.display_name.down ().strip ();
+                if (result_clean == clean_title)
+                    score += 80.0;
+                else if (result_clean.contains (clean_title) || clean_title.contains (result_clean))
+                    score += 40.0;
+
+                // Remix/mixed mismatch penalty
+                bool result_is_remix = r.display_name.down ().contains ("remix");
+                bool result_is_mixed = r.display_name.down ().contains ("mixed");
+                if (result_is_remix && !target_is_remix) score -= 40.0;
+                if (result_is_mixed && !target_is_mixed) score -= 60.0;
+
+                // Artist scoring
+                var result_artist_lower = r.display_artist.down ();
+                if (result_artist_lower.contains (clean_artist)) {
+                    score += 50.0;
+                } else {
+                    foreach (var word in clean_artist.split (" ")) {
+                        if (word.length > 2 && result_artist_lower.contains (word)) {
+                            score += 25.0;
+                            break;
+                        }
+                    }
+                }
+
+                scored[i].score = score;
+            }
+
+            // Sort descending by score (simple insertion sort — array is at most ~10 items)
+            for (var i = 1; i < scored.length; i++) {
+                var key = scored[i];
+                var j = i - 1;
+                while (j >= 0 && scored[j].score < key.score) {
+                    scored[j + 1] = scored[j];
+                    j--;
+                }
+                scored[j + 1] = key;
+            }
+
+            // Filter out negative scores
+            PaxSenixResult[] filtered = {};
+            foreach (var r in scored)
+                if (r.score > 0) filtered += r;
+
+            return filtered;
+        }
+
+        // Fetch and convert lyrics for a single track ID.
+        // Returns richsync-style LRC string, or null on failure.
+        private async string? paxsenix_fetch_track (string id) {
+            var url = "https://lyrics.paxsenix.org/apple-music/lyrics?id=%s".printf (
+                Uri.escape_string (id, null, false));
+            string[,] headers = { { "User-Agent", "Semitone/1.0" } };
+            var body = yield http_get_with_headers (url, headers);
+            if (body == null) return null;
+
+            try {
+                var parser = new Json.Parser ();
+                parser.load_from_data ((!)body);
+                var root_obj = parser.get_root ()?.get_object ();
+                if (root_obj == null) return null;
+                var obj = (!)root_obj;
+
+                // 1. ttmlContent — parse with existing TTML parser, convert to our LRC format
+                if (obj.has_member ("ttmlContent")) {
+                    var ttml = obj.get_string_member ("ttmlContent");
+                    if (ttml.strip ().length > 0) {
+                        var lines = parse_ttml (ttml);
+                        if (lines.length > 0) {
+                            log ("PaxSenix: using ttmlContent, %d lines".printf (lines.length));
+                            return ttml; // parse_ttml handles it natively — just return it raw
+                        }
+                    }
+                }
+
+                // 2. elrcMultiPerson / elrc — these are already LRC with word timings
+                if (obj.has_member ("elrcMultiPerson")) {
+                    var elrc = obj.get_string_member ("elrcMultiPerson");
+                    if (elrc.strip ().length > 0) {
+                        log ("PaxSenix: using elrcMultiPerson");
+                        return elrc;
+                    }
+                }
+                if (obj.has_member ("elrc")) {
+                    var elrc = obj.get_string_member ("elrc");
+                    if (elrc.strip ().length > 0) {
+                        log ("PaxSenix: using elrc");
+                        return elrc;
+                    }
+                }
+
+                // 3. content[] array — build richsync LRC manually
+                //    Each element: { timestamp (ms), text: [{text, timestamp, endtime}], background, oppositeTurn }
+                if (obj.has_member ("content")) {
+                    var content = obj.get_array_member ("content");
+                    if (content == null) return null;
+                    if (((!)content).get_length () > 0) {
+                        var lrc_type = obj.has_member ("type") ? obj.get_string_member ("type") : "";
+                        bool has_word_level = lrc_type == "Syllable";
+                        log ("PaxSenix: using content array, type=%s has_word_level=%s".printf (
+                            lrc_type, has_word_level.to_string ()));
+
+                        var sb = new StringBuilder ();
+                        ((!)content).foreach_element ((arr, idx, node) => {
+                            var line_obj = node.get_object ();
+                            if (line_obj == null) return;
+                            var lo = (!)line_obj;
+
+                            int64 time_ms = lo.has_member ("timestamp")
+                                ? lo.get_int_member ("timestamp") : 0;
+                            bool is_bg       = lo.has_member ("background")   && lo.get_boolean_member ("background");
+                            bool opp_turn    = lo.has_member ("oppositeTurn") && lo.get_boolean_member ("oppositeTurn");
+
+                            var words_arr = lo.has_member ("text")
+                                ? lo.get_array_member ("text") : null;
+                            if (words_arr == null) return;
+                            var wa = (!)words_arr;
+
+                            // Build line text
+                            var line_text_sb = new StringBuilder ();
+                            wa.foreach_element ((wai, wi, wnode) => {
+                                var w = wnode.get_object ();
+                                if (w == null) return;
+                                var wo = (!)w;
+                                var wtext = wo.has_member ("text") ? wo.get_string_member ("text") : "";
+                                if (wtext.length > 0) {
+                                    if (line_text_sb.len > 0) line_text_sb.append_c (' ');
+                                    line_text_sb.append (wtext);
+                                }
+                            });
+
+                            var line_text = line_text_sb.str.strip ();
+                            if (line_text.length == 0) return;
+
+                            // LRC timestamp [MM:SS.cs]
+                            int64 mins  = time_ms / 1000 / 60;
+                            int64 secs  = (time_ms / 1000) % 60;
+                            int64 centis = (time_ms % 1000) / 10;
+
+                            // Agent tag: {bg}, {agent:v2}, or nothing
+                            string agent_tag = "";
+                            if (is_bg)       agent_tag = "{bg}";
+                            else if (opp_turn) agent_tag = "{agent:v2}";
+
+                            sb.append ("[%02lld:%02lld.%02lld]%s%s\n".printf (
+                                mins, secs, centis, agent_tag, line_text));
+
+                            // Word timing line: <word:start_sec:end_sec|...>
+                            if (has_word_level) {
+                                var words_timing_sb = new StringBuilder ();
+                                wa.foreach_element ((wai, wi, wnode) => {
+                                    var w = wnode.get_object ();
+                                    if (w == null) return;
+                                    var wo = (!)w;
+                                    var wtext   = wo.has_member ("text")      ? wo.get_string_member ("text")  : "";
+                                    int64 wstart = wo.has_member ("timestamp") ? wo.get_int_member ("timestamp") : 0;
+                                    int64 wend   = wo.has_member ("endtime")   ? wo.get_int_member ("endtime")   : wstart;
+                                    if (wtext.length > 0) {
+                                        if (words_timing_sb.len > 0) words_timing_sb.append_c ('|');
+                                        words_timing_sb.append ("%s:%.3f:%.3f".printf (
+                                            wtext,
+                                            (double) wstart / 1000.0,
+                                            (double) wend   / 1000.0));
+                                    }
+                                });
+                                if (words_timing_sb.len > 0)
+                                    sb.append ("<%s>\n".printf (words_timing_sb.str));
+                            }
+                        });
+
+                        var result = sb.str.strip ();
+                        if (result.length > 0) return result;
+                    }
+                }
+
+                // 4. plain fallback
+                if (obj.has_member ("plain")) {
+                    var plain = obj.get_string_member ("plain");
+                    if (plain.strip ().length > 0) {
+                        log ("PaxSenix: using plain fallback");
+                        return plain;
+                    }
+                }
+
+                return null;
+            } catch (Error e) {
+                log ("PaxSenix fetch_track parse error: %s".printf (e.message));
+                return null;
+            }
+        }
+
+        private async string? fetch_paxsenix (string title, string artist,
+                                               int duration_ms, string album) {
+            var clean_title  = paxsenix_clean_title (title);
+            var clean_artist = paxsenix_clean_artist (artist);
+
+            log ("PaxSenix: title='%s' artist='%s' dur=%dms".printf (
+                clean_title, clean_artist, duration_ms));
+
+            // Try queries in order, stop at first non-empty search result
+            string[] queries = {
+                "%s %s".printf (clean_title, clean_artist),
+                clean_title
+            };
+            if (album.length > 0)
+                queries += "%s %s %s".printf (clean_title, clean_artist, album);
+
+            PaxSenixResult[] scored = {};
+            foreach (var query in queries) {
+                if (scored.length > 0) break;
+                log ("PaxSenix: searching '%s'".printf (query));
+                var raw_results = yield paxsenix_search (query);
+                if (raw_results.length > 0)
+                    scored = paxsenix_score (raw_results, title, artist, duration_ms);
+            }
+
+            if (scored.length == 0) {
+                log ("PaxSenix: no search results");
+                return null;
+            }
+
+            log ("PaxSenix: %d scored results, trying top 3".printf (scored.length));
+
+            // Try top 3 results, prefer word-timed, fall back to whatever we get
+            string? plain_fallback = null;
+            var limit = int.min (3, scored.length);
+            for (var i = 0; i < limit; i++) {
+                var r = scored[i];
+                log ("PaxSenix: trying id=%s '%s' by '%s' (score=%.1f)".printf (
+                    r.id, r.display_name, r.display_artist, r.score));
+                var lrc = yield paxsenix_fetch_track (r.id);
+                if (lrc == null) continue;
+
+                // Check if it has word timings (either TTML or richsync word lines)
+                bool has_word_timing = ((!)lrc).contains ("<tt")
+                    || ((!)lrc).contains ("<body")
+                    || (((!)lrc).contains ("<") && ((!)lrc).contains (":") && ((!)lrc).contains (">"));
+
+                if (has_word_timing) {
+                    log ("PaxSenix: word-timed result from '%s'".printf (r.display_name));
+                    return lrc;
+                }
+
+                // Keep first non-null as plain fallback
+                if (plain_fallback == null)
+                    plain_fallback = lrc;
+            }
+
+            if (plain_fallback != null) {
+                log ("PaxSenix: no word-timed result, using plain fallback");
+                return plain_fallback;
+            }
+
+            log ("PaxSenix: all candidates returned null");
+            return null;
+        }
+
         // ── BetterLyrics ─────────────────────────────────────────────
 
         private async string? fetch_betterlyrics (string title, string artist, string album, int duration) {
@@ -1144,20 +1518,10 @@ namespace G4 {
                 var parser = new Json.Parser ();
                 parser.load_from_data ((!)body);
                 var root_obj = parser.get_root ()?.get_object ();
-                if (root_obj == null) {
-                    log ("BetterLyrics: root_obj is null");
-                    return null;
-                }
+                if (root_obj == null) return null;
                 var obj = (!)root_obj;
-                if (!obj.has_member ("ttml")) {
-                    log ("BetterLyrics: no 'ttml' field");
-                    return null;
-                }
-                string? ttml_val = obj.get_string_member ("ttml");
-                int ttml_len = ttml_val != null ? ((!)ttml_val).length : 0;
-                int ttml_log_len = ttml_len > 200 ? 200 : ttml_len;
-                log ("BetterLyrics ttml (len=%d): %s".printf (ttml_len, ttml_val != null ? ((!)ttml_val).substring (0, ttml_log_len) : "null"));
-                return ttml_val;
+                if (!obj.has_member ("ttml")) return null;
+                return obj.get_string_member ("ttml");
             } catch (Error e) {
                 log ("BetterLyrics: JSON parse error: %s".printf (e.message));
                 return null;
@@ -1223,7 +1587,7 @@ namespace G4 {
         }
 
         private async LrclibResult? fetch_lrclib (string title, string artist, string album) {
-            var url = "https://lrclib.net/api/get?track_name=%s&artist_name=%s&album_name=%s".printf (
+            var url = "https://lrclib.net/api/search?track_name=%s&artist_name=%s&album_name=%s".printf (
                 Uri.escape_string (title, null, false),
                 Uri.escape_string (artist, null, false),
                 Uri.escape_string (album, null, false));
@@ -1232,68 +1596,32 @@ namespace G4 {
             try {
                 var parser = new Json.Parser ();
                 parser.load_from_data ((!)body);
-                var root_obj = parser.get_root ()?.get_object ();
-                if (root_obj == null) {
-                    log ("fetch_lrclib: root_obj is null");
-                    return null;
-                }
-                var obj = (!)root_obj;
-                
-                // Check instrumental flag - try to get boolean, default to false if not present/invalid
+                var root_arr = parser.get_root ()?.get_array ();
+                if (root_arr == null) return null;
+                var arr = (!)root_arr;
+                if (arr.get_length () < 1) return null;
+                var first_obj_node = arr.get_element (0);
+                var first_obj = first_obj_node.get_object ();
+                if (first_obj == null) return null;
+                var obj = (!)first_obj;
+                if (!obj.has_member ("trackName")) return null;
                 bool instrumental = false;
                 try {
-                    if (obj.has_member ("instrumental")) {
+                    if (obj.has_member ("instrumental"))
                         instrumental = obj.get_boolean_member ("instrumental");
-                    }
-                } catch {
-                    instrumental = false;
-                }
-                log ("fetch_lrclib: instrumental=%d".printf (instrumental ? 1 : 0));
-                
-                log ("fetch_lrclib: parsing JSON, has syncedLyrics=%d, has plainLyrics=%d".printf (
-                    obj.has_member ("syncedLyrics") ? 1 : 0,
-                    obj.has_member ("plainLyrics") ? 1 : 0));
+                } catch {}
                 string synced_val = "";
                 string plain_val = "";
                 string? raw_synced = obj.get_string_member ("syncedLyrics");
-                if (raw_synced != null) {
-                    synced_val = (!)raw_synced;
-                }
+                if (raw_synced != null) synced_val = (!)raw_synced;
                 string? raw_plain = obj.get_string_member ("plainLyrics");
-                if (raw_plain != null) {
-                    plain_val = (!)raw_plain;
-                }
-                log ("fetch_lrclib: synced_val=%s, plain_val=%s".printf (
-                    synced_val.length > 0 ? "not null" : "null",
-                    plain_val.length > 0 ? "not null" : "null"));
+                if (raw_plain != null) plain_val = (!)raw_plain;
+                log ("LRCLib search: found %d results, first match instrumental=%s".printf (
+                    (int) arr.get_length (), instrumental.to_string ()));
                 LrclibResult result = { synced_val, plain_val, instrumental };
-                log ("fetch_lrclib: returning result with synced length %d".printf (result.synced.length));
                 return result;
             } catch (Error e) {
-                return null;
-            }
-        }
-
-        // ── Lyrics.ovh ───────────────────────────────────────────────
-
-        private async string? fetch_lyricsovh (string title, string artist) {
-            var url = "https://api.lyrics.ovh/v1/%s/%s".printf (
-                Uri.escape_string (artist, null, false),
-                Uri.escape_string (title, null, false));
-            var body = yield http_get (url);
-            if (body == null) return null;
-            try {
-                var parser = new Json.Parser ();
-                parser.load_from_data ((!)body);
-                var root_obj = parser.get_root ()?.get_object ();
-                if (root_obj == null) return null;
-                var obj = (!)root_obj;
-                if (!obj.has_member ("lyrics")) return null;
-                var lyrics = obj.get_string_member ("lyrics");
-                if (lyrics.strip ().length == 0) return null;
-                return lyrics;
-            } catch (Error e) {
-                log ("Lyrics.ovh parse error: %s".printf (e.message));
+                log ("LRCLib parse error: %s".printf (e.message));
                 return null;
             }
         }
@@ -1301,7 +1629,6 @@ namespace G4 {
         // ── NetEase ──────────────────────────────────────────────────
 
         private async string? fetch_netease (string title, string artist) {
-            // Search for the track
             var search_url = "https://music.163.com/api/search/get?s=%s+%s&type=1&limit=1".printf (
                 Uri.escape_string (title, null, false),
                 Uri.escape_string (artist, null, false));
@@ -1323,12 +1650,9 @@ namespace G4 {
                 if (((!)songs).get_length () == 0) return null;
                 var song = ((!)songs).get_object_element (0);
                 var id = song.get_int_member ("id");
-
-                // Fetch lyrics
                 var lyric_url = "https://music.163.com/api/song/lyric?id=%lld&lv=1".printf (id);
                 var lyric_body = yield http_get_with_headers (lyric_url, headers);
                 if (lyric_body == null) return null;
-
                 var parser2 = new Json.Parser ();
                 parser2.load_from_data ((!)lyric_body);
                 var lroot = parser2.get_root ()?.get_object ();
@@ -1355,24 +1679,18 @@ namespace G4 {
             var search_body = yield http_get_with_headers (search_url, headers);
             if (search_body == null) return null;
             try {
-                // Find first LRC result link: /lrc/maker/<id>
                 var re = new Regex ("/lrc/maker/(\\d+)");
                 MatchInfo info;
-                if (!re.match ((!)search_body, 0, out info)) {
-                    log ("Megalobiz: no results found");
-                    return null;
-                }
+                if (!re.match ((!)search_body, 0, out info)) return null;
                 var lrc_id = info.fetch (1);
                 var lrc_url = "https://www.megalobiz.com/lrc/maker/%s".printf ((!)lrc_id);
                 var lrc_body = yield http_get_with_headers (lrc_url, headers);
                 if (lrc_body == null) return null;
-                // Extract the LRC content from the page
                 var lrc_re = new Regex (
                     "<div[^>]*class=\"[^\"]*lrc[^\"]*\"[^>]*>([^<]*(?:<(?!/?div)[^<]*)*)</div>",
                     RegexCompileFlags.DOTALL);
                 MatchInfo lrc_info;
                 if (!lrc_re.match ((!)lrc_body, 0, out lrc_info)) {
-                    // Fallback: grab content between [00: and end
                     var start = ((!)lrc_body).index_of ("[00:");
                     if (start < 0) return null;
                     return ((!)lrc_body).substring (start, int.min (8192, ((!)lrc_body).length - start));
@@ -1387,40 +1705,21 @@ namespace G4 {
         // ── LyricGenius ──────────────────────────────────────────────
 
         private async string? fetch_genius (string title, string artist) {
-            // Uses the public search endpoint (no API key needed for search)
             var query = Uri.escape_string ("%s %s".printf (title, artist), null, false);
-            var search_url = "https://api.genius.com/search?q=%s".printf (query);
-            string[,] headers = {
-                { "User-Agent", "Mozilla/5.0" },
-                { "Authorization", "Bearer " }  // empty — public search only
-            };
-            // Try scraping the Genius page directly instead
             var scrape_url = "https://genius.com/search?q=%s".printf (query);
             string[,] scrape_headers = {
                 { "User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0" }
             };
             var page = yield http_get_with_headers (scrape_url, scrape_headers);
-            int page_len = page != null ? ((!)page).length : 0;
-            int page_log_len = page_len > 1000 ? 1000 : page_len;
-            log ("Genius search page (len=%d): %s".printf (page_len, page != null ? ((!)page).substring (0, page_log_len) : "null"));
             if (page == null) return null;
             try {
-                // Find song URL from search results
                 var re = new Regex ("href=\"(https://genius\\.com/[A-Za-z0-9-]+-lyrics)\"");
                 MatchInfo info;
-                if (!re.match ((!)page, 0, out info)) {
-                    log ("Genius: no song URL found");
-                    return null;
-                }
+                if (!re.match ((!)page, 0, out info)) return null;
                 string? song_url = info.fetch (1);
-                log ("Genius song URL: %s".printf (song_url != null ? (!)song_url : "null"));
                 if (song_url == null) return null;
                 var song_page = yield http_get_with_headers ((!)song_url, scrape_headers);
-                int song_page_len = song_page != null ? ((!)song_page).length : 0;
-                int song_page_log_len = song_page_len > 1000 ? 1000 : song_page_len;
-                log ("Genius song page (len=%d): %s".printf (song_page_len, song_page != null ? ((!)song_page).substring (0, song_page_log_len) : "null"));
                 if (song_page == null) return null;
-                // Extract lyrics from data-lyrics-container divs
                 var lyrics_re = new Regex (
                     "data-lyrics-container=\"true\"[^>]*>([^<]*(?:<(?!/?div)[^<]*)*)",
                     RegexCompileFlags.DOTALL);
@@ -1429,7 +1728,6 @@ namespace G4 {
                 var pos = 0;
                 while (lyrics_re.match_full ((!)song_page, -1, pos, 0, out lyrics_info)) {
                     var chunk = lyrics_info.fetch (1) ?? "";
-                    // Strip remaining HTML tags
                     var tag_re = new Regex ("<[^>]+>");
                     chunk = tag_re.replace (chunk, -1, 0, "");
                     sb.append (chunk.replace ("&#x27;", "'")
@@ -1443,23 +1741,9 @@ namespace G4 {
                     pos = match_end;
                 }
                 var result = sb.str.strip ();
-                int result_len = result.length;
-                int result_log_len = result_len > 500 ? 500 : result_len;
-                log ("Genius extracted result (len=%d): %s".printf (result_len, result.substring (0, result_log_len)));
-                
-                // Validate: check if result contains parts of the artist or title we're looking for
-                // This helps filter out wrong songs like the Bruno Mars issue
                 bool artist_match = result.down ().contains (artist.down ());
-                bool title_match = result.down ().contains (title.down ());
-                log ("Genius validation: artist '%s' found=%d, title '%s' found=%d".printf (
-                    artist, artist_match ? 1 : 0, title, title_match ? 1 : 0));
-                
-                // If neither artist nor title is found in the lyrics, it's probably the wrong song
-                if (!artist_match && !title_match) {
-                    log ("Genius: rejecting - lyrics don't match artist or title");
-                    return null;
-                }
-                
+                bool title_match  = result.down ().contains (title.down ());
+                if (!artist_match && !title_match) return null;
                 if (result.length == 0) return null;
                 return result;
             } catch (RegexError e) {
@@ -1471,7 +1755,6 @@ namespace G4 {
         // ── Musixmatch ───────────────────────────────────────────────
 
         private async string? fetch_musixmatch (string title, string artist, string api_key) {
-            // Search for track
             var search_url = "https://api.musixmatch.com/ws/1.1/track.search?q_track=%s&q_artist=%s&apikey=%s&page_size=1&page=1&s_track_rating=desc".printf (
                 Uri.escape_string (title, null, false),
                 Uri.escape_string (artist, null, false),
@@ -1494,13 +1777,10 @@ namespace G4 {
                 var track = track_obj.get_object_member ("track");
                 if (track == null) return null;
                 var track_id = ((!)track).get_int_member ("track_id");
-
-                // Fetch lyrics
                 var lyrics_url = "https://api.musixmatch.com/ws/1.1/track.lyrics.get?track_id=%lld&apikey=%s".printf (
                     track_id, Uri.escape_string (api_key, null, false));
                 var lyrics_body = yield http_get (lyrics_url);
                 if (lyrics_body == null) return null;
-
                 var parser2 = new Json.Parser ();
                 parser2.load_from_data ((!)lyrics_body);
                 var lroot = parser2.get_root ()?.get_object ();
@@ -1563,8 +1843,8 @@ namespace G4 {
                             for (var ws = span->children; ws != null; ws = ws->next) {
                                 if (ws->type != Xml.ElementType.ELEMENT_NODE) continue;
                                 var w_begin = ws->get_prop ("begin");
-                                var w_end = ws->get_prop ("end");
-                                var w_text = ws->get_content ();
+                                var w_end   = ws->get_prop ("end");
+                                var w_text  = ws->get_content ();
                                 if (w_begin != null && w_end != null && w_text.length > 0) {
                                     LyricWord w = {
                                         w_text,
@@ -1576,8 +1856,8 @@ namespace G4 {
                             }
                         } else {
                             var w_begin = span->get_prop ("begin");
-                            var w_end = span->get_prop ("end");
-                            var w_text = span->get_content ();
+                            var w_end   = span->get_prop ("end");
+                            var w_text  = span->get_content ();
                             if (w_begin != null && w_end != null && w_text.length > 0) {
                                 LyricWord w = {
                                     w_text,
@@ -1751,7 +2031,6 @@ namespace G4 {
             LyricLine[] result = {};
             foreach (var line in text.split ("\n")) {
                 var trimmed = line.strip ();
-                // Skip LRC-style timestamps — this is plain only
                 if (trimmed.length > 0 && trimmed[0] == '[' && parse_timestamp (
                         trimmed.substring (1, trimmed.index_of_char (']') > 0
                             ? trimmed.index_of_char (']') - 1 : 0)) >= 0)
@@ -1760,7 +2039,6 @@ namespace G4 {
                 LyricLine l = { -1, trimmed, empty_words, false };
                 result += l;
             }
-            // Trim leading/trailing blank lines
             var start = 0;
             var end = result.length - 1;
             while (start <= end && result[start].text.length == 0) start++;
@@ -1832,4 +2110,3 @@ namespace G4 {
         }
     }
 }
-

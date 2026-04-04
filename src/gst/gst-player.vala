@@ -159,6 +159,12 @@ namespace G4 {
             }
         }
 
+        public Gst.ClockTime duration {
+            get {
+                return _duration;
+            }
+        }
+
         public uint replay_gain {
             get {
                 if (_replay_gain != null)
