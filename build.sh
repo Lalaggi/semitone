@@ -15,7 +15,8 @@ flatpak build-bundle flatpak-repo-x64 flatpak-downloads/Semitone-x64-64.flatpak 
 rm -rf flatpak-build-x64 flatpak-repo-x64
 
 echo "=== Building Flatpak arm64 bundle ==="
-flatpak install -u flathub org.gnome.Platform/aarch64/48 org.gnome.Sdk/aarch64/48 || true
+GNOME_RUNTIME_VERSION=$(jq -r '.["runtime-version"]' pkgs/flatpak/org.codeberg.el1lovescomputers.semitone.json)
+flatpak install -u flathub "org.gnome.Platform/aarch64/${GNOME_RUNTIME_VERSION}" "org.gnome.Sdk/aarch64/${GNOME_RUNTIME_VERSION}" || true
 if flatpak-builder --force-clean --user --install-deps-from=flathub --arch=aarch64 flatpak-build-arm64 pkgs/flatpak/org.codeberg.el1lovescomputers.semitone.json; then
     flatpak build-export flatpak-repo-arm64 flatpak-build-arm64
     flatpak build-bundle flatpak-repo-arm64 flatpak-downloads/Semitone-arm64.flatpak org.codeberg.el1lovescomputers.semitone --arch=aarch64

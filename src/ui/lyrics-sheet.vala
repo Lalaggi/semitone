@@ -1105,19 +1105,9 @@ namespace G4 {
         }
 
         // ── PaxSenix ─────────────────────────────────────────────────
-        //
-        // API: https://lyrics.paxsenix.org
-        //   Search:  GET /apple-music/search?q=<query>
-        //            Returns JSON array of { id, displayName, displayArtist, albumName, duration (ms) }
-        //   Lyrics:  GET /apple-music/lyrics?id=<id>
-        //            Returns { type, ttmlContent, elrcMultiPerson, elrc, plain, content[] }
-        //
-        // Output format: richsync-style LRC with word timing lines, compatible with
-        // parse_lrc() + parse_word_timings() — same format used by SimpMusic richSyncLyrics.
 
         private string paxsenix_clean_title (string title) {
             string cleaned = title.strip ();
-            // Patterns to strip: (Official Video), [Official Audio], feat./ft., year in parens, etc.
             string[] patterns = {
                 "\\s*\\(.*?(?:official|video|audio|lyrics?|visualizer|hd|hq|4k|remaster|remix|live|acoustic|version|edit|extended|radio|clean|explicit).*?\\)",
                 "\\s*\\[.*?(?:official|video|audio|lyrics?|visualizer|hd|hq|4k|remaster|remix|live|acoustic|version|edit|extended|radio|clean|explicit).*?\\]",
@@ -1154,9 +1144,6 @@ namespace G4 {
             return cleaned.strip ();
         }
 
-        // Returns a scored list of (id, display_name, display_artist, duration_ms).
-        // Uses the same scoring logic as the Kotlin original: duration diff, title match,
-        // artist match, remix/mixed penalty.
         private struct PaxSenixResult {
             public string id;
             public string display_name;
@@ -1215,7 +1202,6 @@ namespace G4 {
                 double score = 0.0;
                 var r = scored[i];
 
-                // Duration scoring
                 if (r.duration_ms > 0) {
                     var diff = (r.duration_ms - duration_ms).abs ();
                     if (diff <= 2000)       score += 100.0;
@@ -1224,7 +1210,6 @@ namespace G4 {
                     else                    score -= 50.0;
                 }
 
-                // Title scoring
                 var result_clean = cleanup_re != null
                     ? ((!)cleanup_re).replace (r.display_name, -1, 0, "").down ().strip ()
                     : r.display_name.down ().strip ();
@@ -1233,13 +1218,11 @@ namespace G4 {
                 else if (result_clean.contains (clean_title) || clean_title.contains (result_clean))
                     score += 40.0;
 
-                // Remix/mixed mismatch penalty
                 bool result_is_remix = r.display_name.down ().contains ("remix");
                 bool result_is_mixed = r.display_name.down ().contains ("mixed");
                 if (result_is_remix && !target_is_remix) score -= 40.0;
                 if (result_is_mixed && !target_is_mixed) score -= 60.0;
 
-                // Artist scoring
                 var result_artist_lower = r.display_artist.down ();
                 if (result_artist_lower.contains (clean_artist)) {
                     score += 50.0;
@@ -1255,7 +1238,6 @@ namespace G4 {
                 scored[i].score = score;
             }
 
-            // Sort descending by score (simple insertion sort — array is at most ~10 items)
             for (var i = 1; i < scored.length; i++) {
                 var key = scored[i];
                 var j = i - 1;
@@ -1266,7 +1248,6 @@ namespace G4 {
                 scored[j + 1] = key;
             }
 
-            // Filter out negative scores
             PaxSenixResult[] filtered = {};
             foreach (var r in scored)
                 if (r.score > 0) filtered += r;
@@ -1274,8 +1255,6 @@ namespace G4 {
             return filtered;
         }
 
-        // Fetch and convert lyrics for a single track ID.
-        // Returns richsync-style LRC string, or null on failure.
         private async string? paxsenix_fetch_track (string id) {
             var url = "https://lyrics.paxsenix.org/apple-music/lyrics?id=%s".printf (
                 Uri.escape_string (id, null, false));
@@ -1290,19 +1269,17 @@ namespace G4 {
                 if (root_obj == null) return null;
                 var obj = (!)root_obj;
 
-                // 1. ttmlContent — parse with existing TTML parser, convert to our LRC format
                 if (obj.has_member ("ttmlContent")) {
                     var ttml = obj.get_string_member ("ttmlContent");
                     if (ttml.strip ().length > 0) {
                         var lines = parse_ttml (ttml);
                         if (lines.length > 0) {
                             log ("PaxSenix: using ttmlContent, %d lines".printf (lines.length));
-                            return ttml; // parse_ttml handles it natively — just return it raw
+                            return ttml;
                         }
                     }
                 }
 
-                // 2. elrcMultiPerson / elrc — these are already LRC with word timings
                 if (obj.has_member ("elrcMultiPerson")) {
                     var elrc = obj.get_string_member ("elrcMultiPerson");
                     if (elrc.strip ().length > 0) {
@@ -1318,8 +1295,6 @@ namespace G4 {
                     }
                 }
 
-                // 3. content[] array — build richsync LRC manually
-                //    Each element: { timestamp (ms), text: [{text, timestamp, endtime}], background, oppositeTurn }
                 if (obj.has_member ("content")) {
                     var content = obj.get_array_member ("content");
                     if (content == null) return null;
@@ -1335,17 +1310,14 @@ namespace G4 {
                             if (line_obj == null) return;
                             var lo = (!)line_obj;
 
-                            int64 time_ms = lo.has_member ("timestamp")
-                                ? lo.get_int_member ("timestamp") : 0;
-                            bool is_bg       = lo.has_member ("background")   && lo.get_boolean_member ("background");
-                            bool opp_turn    = lo.has_member ("oppositeTurn") && lo.get_boolean_member ("oppositeTurn");
+                            int64 time_ms = lo.has_member ("timestamp") ? lo.get_int_member ("timestamp") : 0;
+                            bool is_bg    = lo.has_member ("background")   && lo.get_boolean_member ("background");
+                            bool opp_turn = lo.has_member ("oppositeTurn") && lo.get_boolean_member ("oppositeTurn");
 
-                            var words_arr = lo.has_member ("text")
-                                ? lo.get_array_member ("text") : null;
+                            var words_arr = lo.has_member ("text") ? lo.get_array_member ("text") : null;
                             if (words_arr == null) return;
                             var wa = (!)words_arr;
 
-                            // Build line text
                             var line_text_sb = new StringBuilder ();
                             wa.foreach_element ((wai, wi, wnode) => {
                                 var w = wnode.get_object ();
@@ -1361,27 +1333,24 @@ namespace G4 {
                             var line_text = line_text_sb.str.strip ();
                             if (line_text.length == 0) return;
 
-                            // LRC timestamp [MM:SS.cs]
-                            int64 mins  = time_ms / 1000 / 60;
-                            int64 secs  = (time_ms / 1000) % 60;
+                            int64 mins   = time_ms / 1000 / 60;
+                            int64 secs   = (time_ms / 1000) % 60;
                             int64 centis = (time_ms % 1000) / 10;
 
-                            // Agent tag: {bg}, {agent:v2}, or nothing
                             string agent_tag = "";
-                            if (is_bg)       agent_tag = "{bg}";
+                            if (is_bg)        agent_tag = "{bg}";
                             else if (opp_turn) agent_tag = "{agent:v2}";
 
                             sb.append ("[%02lld:%02lld.%02lld]%s%s\n".printf (
                                 mins, secs, centis, agent_tag, line_text));
 
-                            // Word timing line: <word:start_sec:end_sec|...>
                             if (has_word_level) {
                                 var words_timing_sb = new StringBuilder ();
                                 wa.foreach_element ((wai, wi, wnode) => {
                                     var w = wnode.get_object ();
                                     if (w == null) return;
                                     var wo = (!)w;
-                                    var wtext   = wo.has_member ("text")      ? wo.get_string_member ("text")  : "";
+                                    var wtext  = wo.has_member ("text")      ? wo.get_string_member ("text")      : "";
                                     int64 wstart = wo.has_member ("timestamp") ? wo.get_int_member ("timestamp") : 0;
                                     int64 wend   = wo.has_member ("endtime")   ? wo.get_int_member ("endtime")   : wstart;
                                     if (wtext.length > 0) {
@@ -1402,7 +1371,6 @@ namespace G4 {
                     }
                 }
 
-                // 4. plain fallback
                 if (obj.has_member ("plain")) {
                     var plain = obj.get_string_member ("plain");
                     if (plain.strip ().length > 0) {
@@ -1426,7 +1394,6 @@ namespace G4 {
             log ("PaxSenix: title='%s' artist='%s' dur=%dms".printf (
                 clean_title, clean_artist, duration_ms));
 
-            // Try queries in order, stop at first non-empty search result
             string[] queries = {
                 "%s %s".printf (clean_title, clean_artist),
                 clean_title
@@ -1450,7 +1417,6 @@ namespace G4 {
 
             log ("PaxSenix: %d scored results, trying top 3".printf (scored.length));
 
-            // Try top 3 results, prefer word-timed, fall back to whatever we get
             string? plain_fallback = null;
             var limit = int.min (3, scored.length);
             for (var i = 0; i < limit; i++) {
@@ -1460,7 +1426,6 @@ namespace G4 {
                 var lrc = yield paxsenix_fetch_track (r.id);
                 if (lrc == null) continue;
 
-                // Check if it has word timings (either TTML or richsync word lines)
                 bool has_word_timing = ((!)lrc).contains ("<tt")
                     || ((!)lrc).contains ("<body")
                     || (((!)lrc).contains ("<") && ((!)lrc).contains (":") && ((!)lrc).contains (">"));
@@ -1470,7 +1435,6 @@ namespace G4 {
                     return lrc;
                 }
 
-                // Keep first non-null as plain fallback
                 if (plain_fallback == null)
                     plain_fallback = lrc;
             }
@@ -1953,12 +1917,8 @@ namespace G4 {
                         var word_start = pos;
                         while (pos < rest.length && rest[pos] != '<')
                             pos++;
-                        var word_text = rest.substring (word_start, pos - word_start)
-                            .replace ("&#x27;", "'")
-                            .replace ("&amp;", "&")
-                            .replace ("&lt;", "<")
-                            .replace ("&gt;", ">")
-                            .strip ();
+                        var word_text = rest.substring (word_start, pos - word_start);
+                        word_text = decode_html_entities (word_text).strip ();
 
                         if (word_text.length > 0 && word_start_ms >= 0) {
                             LyricWord w = { word_text, word_start_ms / 1000.0, 0.0 };
@@ -2019,7 +1979,8 @@ namespace G4 {
                     i++;
                 }
 
-                LyricLine l = { ms, rest, words, is_bg };
+                var decoded_rest = decode_html_entities (rest);
+                LyricLine l = { ms, decoded_rest, words, is_bg };
                 result += l;
             }
             return result;
@@ -2056,11 +2017,20 @@ namespace G4 {
             foreach (var part in parts) {
                 var segments = part.split (":");
                 if (segments.length >= 3) {
-                    LyricWord w = { segments[0], double.parse (segments[1]), double.parse (segments[2]) };
+                    var text = decode_html_entities (segments[0]);
+                    LyricWord w = { text, double.parse (segments[1]), double.parse (segments[2]) };
                     words += w;
                 }
             }
             return words;
+        }
+
+        private string decode_html_entities (string s) {
+            return s.replace ("&#x27;", "'")
+                    .replace ("&quot;", "\"")
+                    .replace ("&amp;", "&")
+                    .replace ("&lt;", "<")
+                    .replace ("&gt;", ">");
         }
 
         private int64 parse_timestamp (string ts) {
