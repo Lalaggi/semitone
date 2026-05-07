@@ -13,6 +13,8 @@ namespace G4 {
         public bool is_bg;
     }
 
+    public static bool lyrics_debug_enabled = false;
+
     public class LyricsSheet : Object {
         private Application _app;
         private Gtk.ListBox _list_box;
@@ -804,12 +806,28 @@ namespace G4 {
                     if (raw != null) {
                         LyricLine[] parsed = {};
                         bool synced = false;
-                        parsed = parse_lrc ((!)raw);
+                        parsed = parse_rich_sync ((!)raw);
                         if (parsed.length > 0) {
                             synced = true;
                         } else {
-                            parsed = parse_plain ((!)raw);
-                            synced = false;
+                            parsed = parse_ttml ((!)raw);
+                            if (parsed.length > 0) {
+                                synced = false;
+                                foreach (var l in parsed) {
+                                    if (l.time_ms >= 0) {
+                                        synced = true;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                parsed = parse_lrc ((!)raw);
+                                if (parsed.length > 0) {
+                                    synced = true;
+                                } else {
+                                    parsed = parse_plain ((!)raw);
+                                    synced = false;
+                                }
+                            }
                         }
                         if (parsed.length > 0) {
                             var score = score_candidate (parsed, synced, (!)raw, pi, "PaxSenix");
@@ -827,13 +845,21 @@ namespace G4 {
                         log ("BetterLyrics: disabled"); continue;
                     }
                     log ("Trying BetterLyrics...");
-                    var raw = yield fetch_betterlyrics (m.title, m.artist, m.album, 0);
+                    var duration_sec = (int) (GstPlayer.to_second (_app.player.duration));
+                    var raw = yield fetch_betterlyrics (m.title, m.artist, m.album, duration_sec);
                     if (raw != null) {
                         var parsed = parse_ttml ((!)raw);
                         if (parsed.length > 0) {
-                            var score = score_candidate (parsed, true, (!)raw, pi, "BetterLyrics");
-                            log ("BetterLyrics: %d lines, score=%.1f".printf (parsed.length, score));
-                            LyricsCandidate c = { (!)raw, "BetterLyrics", parsed, true, score };
+                            bool synced = false;
+                            foreach (var l in parsed) {
+                                if (l.time_ms >= 0) {
+                                    synced = true;
+                                    break;
+                                }
+                            }
+                            var score = score_candidate (parsed, synced, (!)raw, pi, "BetterLyrics");
+                            log ("BetterLyrics: %d lines synced=%s, score=%.1f".printf (parsed.length, synced.to_string (), score));
+                            LyricsCandidate c = { (!)raw, "BetterLyrics", parsed, synced, score };
                             process_candidate (c);
                         } else {
                             log ("BetterLyrics: parse returned 0 lines");
@@ -858,7 +884,10 @@ namespace G4 {
                         if (parse_rich_sync ((!)raw).length > 0) {
                             parsed = parse_rich_sync ((!)raw); synced = true;
                         } else if (parse_ttml ((!)raw).length > 0) {
-                            parsed = parse_ttml ((!)raw); synced = true;
+                            parsed = parse_ttml ((!)raw);
+                            foreach (var l in parsed) {
+                                if (l.time_ms >= 0) { synced = true; break; }
+                            }
                         } else if (parse_lrc ((!)raw).length > 0) {
                             parsed = parse_lrc ((!)raw); synced = true;
                         } else {
@@ -1271,25 +1300,33 @@ namespace G4 {
 
                 if (obj.has_member ("ttmlContent")) {
                     var ttml = obj.get_string_member ("ttmlContent");
-                    if (ttml.strip ().length > 0) {
+                    if (ttml.length > 0) {
+                        if (G4.lyrics_debug_enabled) {
+                            print ("[DEBUG] PaxSenix: got ttmlContent, length=%d\n", ttml.length);
+                        }
                         var lines = parse_ttml (ttml);
+                        if (G4.lyrics_debug_enabled) {
+                            print ("[DEBUG] PaxSenix: parse_ttml returned %d lines\n", lines.length);
+                        }
                         if (lines.length > 0) {
-                            log ("PaxSenix: using ttmlContent, %d lines".printf (lines.length));
-                            return ttml;
+                            var converted = lyrics_lines_to_string (lines);
+                            log ("PaxSenix: using ttmlContent, converted to %s format, %d chars".printf (
+                                converted.contains ("[") ? "LRC" : "plain", converted.length));
+                            return converted;
                         }
                     }
                 }
 
                 if (obj.has_member ("elrcMultiPerson")) {
                     var elrc = obj.get_string_member ("elrcMultiPerson");
-                    if (elrc.strip ().length > 0) {
+                    if (elrc.length > 0) {
                         log ("PaxSenix: using elrcMultiPerson");
                         return elrc;
                     }
                 }
                 if (obj.has_member ("elrc")) {
                     var elrc = obj.get_string_member ("elrc");
-                    if (elrc.strip ().length > 0) {
+                    if (elrc.length > 0) {
                         log ("PaxSenix: using elrc");
                         return elrc;
                     }
@@ -1367,13 +1404,16 @@ namespace G4 {
                         });
 
                         var result = sb.str.strip ();
+                        if (G4.lyrics_debug_enabled) {
+                            print ("[DEBUG] content array result: length=%d\n", result.length);
+                        }
                         if (result.length > 0) return result;
                     }
                 }
 
                 if (obj.has_member ("plain")) {
                     var plain = obj.get_string_member ("plain");
-                    if (plain.strip ().length > 0) {
+                    if (plain.length > 0) {
                         log ("PaxSenix: using plain fallback");
                         return plain;
                     }
@@ -1484,8 +1524,21 @@ namespace G4 {
                 var root_obj = parser.get_root ()?.get_object ();
                 if (root_obj == null) return null;
                 var obj = (!)root_obj;
-                if (!obj.has_member ("ttml")) return null;
-                return obj.get_string_member ("ttml");
+                if (obj.has_member ("error")) {
+                    var err_msg = obj.get_string_member ("error");
+                    log ("BetterLyrics API error: %s".printf (err_msg));
+                    if (err_msg.contains ("API key required")) {
+                        log ("BetterLyrics: API key required for uncached songs. Create ~/.config/semitone/betterlyrics-api-key or try a more popular song");
+                    }
+                    return null;
+                }
+                if (obj.has_member ("ttml")) {
+                    return obj.get_string_member ("ttml");
+                }
+                if (obj.has_member ("lyrics")) {
+                    return obj.get_string_member ("lyrics");
+                }
+                return null;
             } catch (Error e) {
                 log ("BetterLyrics: JSON parse error: %s".printf (e.message));
                 return null;
@@ -1781,6 +1834,61 @@ namespace G4 {
             }
             if (body == null) { delete doc; return result; }
 
+            bool has_line_timing = false;
+            bool has_word_timing = false;
+
+            for (var div = body->children; div != null; div = div->next) {
+                if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
+                for (var p = div->children; p != null; p = p->next) {
+                    if (p->type != Xml.ElementType.ELEMENT_NODE) continue;
+                    if (p->name != "p") continue;
+                    if (p->get_prop ("begin") != null) {
+                        has_line_timing = true;
+                    }
+                    for (var span = p->children; span != null; span = span->next) {
+                        if (span->type != Xml.ElementType.ELEMENT_NODE) continue;
+                        if (span->name != "span") continue;
+                        if (span->get_prop ("begin") != null && span->get_prop ("end") != null) {
+                            has_word_timing = true;
+                        }
+                    }
+                }
+            }
+
+            if (G4.lyrics_debug_enabled) {
+                print ("[DEBUG] parse_ttml: word_timing=%s, line_timing=%s\n",
+                       has_word_timing.to_string (), has_line_timing.to_string ());
+            }
+
+            if (has_word_timing) {
+                return parse_ttml_word_synced (body);
+            } else if (has_line_timing) {
+                return parse_ttml_line_synced (body);
+            } else {
+                return parse_ttml_unsynced (body);
+            }
+        }
+
+        private LyricLine[] parse_ttml_unsynced (unowned Xml.Node* body) {
+            LyricLine[] result = {};
+            for (var div = body->children; div != null; div = div->next) {
+                if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
+                for (var p = div->children; p != null; p = p->next) {
+                    if (p->type != Xml.ElementType.ELEMENT_NODE) continue;
+                    if (p->name != "p") continue;
+                    var text = p->get_content ();
+                    if (text.strip ().length > 0) {
+                        LyricWord[] empty_words = {};
+                        LyricLine l = { -1, text.strip (), empty_words, false };
+                        result += l;
+                    }
+                }
+            }
+            return result;
+        }
+
+        private LyricLine[] parse_ttml_line_synced (unowned Xml.Node* body) {
+LyricLine[] result = {};
             for (var div = body->children; div != null; div = div->next) {
                 if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
                 for (var p = div->children; p != null; p = p->next) {
@@ -1792,6 +1900,8 @@ namespace G4 {
                     var ms = ttml_time_to_ms ((!)begin_str);
                     if (ms < 0) continue;
 
+                    var p_content = p->get_content ();
+
                     LyricWord[] main_words = {};
                     LyricWord[] bg_words = {};
                     var line_text_sb = new StringBuilder ();
@@ -1802,16 +1912,17 @@ namespace G4 {
 
                         var role = span->get_prop ("role");
                         bool is_this_bg = (role != null && (!)role == "x-bg");
+                        var w_text = span->get_content ();
 
                         if (is_this_bg) {
                             for (var ws = span->children; ws != null; ws = ws->next) {
                                 if (ws->type != Xml.ElementType.ELEMENT_NODE) continue;
                                 var w_begin = ws->get_prop ("begin");
-                                var w_end   = ws->get_prop ("end");
-                                var w_text  = ws->get_content ();
-                                if (w_begin != null && w_end != null && w_text.length > 0) {
+                                var w_end = ws->get_prop ("end");
+                                var w_content = ws->get_content ();
+                                if (w_begin != null && w_end != null && w_content.length > 0) {
                                     LyricWord w = {
-                                        w_text,
+                                        w_content,
                                         ttml_time_to_ms ((!)w_begin) / 1000.0,
                                         ttml_time_to_ms ((!)w_end) / 1000.0
                                     };
@@ -1820,8 +1931,7 @@ namespace G4 {
                             }
                         } else {
                             var w_begin = span->get_prop ("begin");
-                            var w_end   = span->get_prop ("end");
-                            var w_text  = span->get_content ();
+                            var w_end = span->get_prop ("end");
                             if (w_begin != null && w_end != null && w_text.length > 0) {
                                 LyricWord w = {
                                     w_text,
@@ -1830,24 +1940,116 @@ namespace G4 {
                                 };
                                 main_words += w;
                                 line_text_sb.append (w_text);
+                                line_text_sb.append_c (' ');
                             }
                         }
                     }
 
-                    LyricLine main_line = { ms, line_text_sb.str, main_words, false };
+                    if (line_text_sb.len == 0 && p_content.length > 0) {
+                        line_text_sb.append (p_content);
+                    }
+
+                    var line_text = line_text_sb.str.strip ();
+                    if (line_text.length == 0) continue;
+
+                    LyricLine main_line = { ms, line_text, main_words, false };
                     result += main_line;
 
                     if (bg_words.length > 0) {
                         var bg_text_sb = new StringBuilder ();
-                        foreach (var bw in bg_words)
+                        foreach (var bw in bg_words) {
                             bg_text_sb.append (bw.text);
-                        LyricLine bg_line = { ms, bg_text_sb.str, bg_words, true };
+                            bg_text_sb.append_c (' ');
+                        }
+                        LyricLine bg_line = { ms, bg_text_sb.str.strip (), bg_words, true };
                         result += bg_line;
                     }
                 }
             }
-            delete doc;
             return result;
+        }
+
+        private LyricLine[] parse_ttml_word_synced (unowned Xml.Node* body) {
+            LyricLine[] result = {};
+            for (var div = body->children; div != null; div = div->next) {
+                if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
+                for (var p = div->children; p != null; p = p->next) {
+                    if (p->type != Xml.ElementType.ELEMENT_NODE) continue;
+                    if (p->name != "p") continue;
+
+                    var begin_str = p->get_prop ("begin");
+                    if (begin_str == null) continue;
+                    var line_ms = ttml_time_to_ms ((!)begin_str);
+                    if (line_ms < 0) continue;
+
+                    LyricWord[] words = {};
+                    var line_text_sb = new StringBuilder ();
+
+                    for (var span = p->children; span != null; span = span->next) {
+                        if (span->type != Xml.ElementType.ELEMENT_NODE) continue;
+                        if (span->name != "span") continue;
+
+                        var role = span->get_prop ("role");
+                        if (role != null && (!)role == "x-bg") continue;
+
+                        var w_begin_str = span->get_prop ("begin");
+                        var w_end_str = span->get_prop ("end");
+                        var w_text = span->get_content ();
+
+                        if (w_begin_str != null && w_end_str != null && w_text.length > 0) {
+                            var w_begin = ttml_time_to_ms ((!)w_begin_str);
+                            var w_end = ttml_time_to_ms ((!)w_end_str);
+                            if (w_begin >= 0 && w_end >= 0) {
+                                LyricWord w = { w_text, w_begin / 1000.0, w_end / 1000.0 };
+                                words += w;
+                                line_text_sb.append (w_text);
+                                line_text_sb.append_c (' ');
+                            }
+                        }
+                    }
+
+                    for (var i = 0; i < words.length - 1; i++)
+                        words[i].end_sec = words[i + 1].start_sec;
+                    if (words.length > 0)
+                        words[words.length - 1].end_sec = words[words.length - 1].start_sec + 3.0;
+
+                    if (words.length > 0 || line_text_sb.str.strip ().length > 0) {
+                        LyricLine l = { line_ms, line_text_sb.str.strip (), words, false };
+                        result += l;
+                    }
+                }
+            }
+            return result;
+        }
+
+        private string lyrics_lines_to_string (LyricLine[] lines) {
+            var sb = new StringBuilder ();
+            bool has_timing = false;
+            foreach (var l in lines) {
+                if (l.time_ms >= 0) {
+                    has_timing = true;
+                    break;
+                }
+            }
+            if (has_timing) {
+                foreach (var l in lines) {
+                    if (l.time_ms < 0) continue;
+                    int64 mins = l.time_ms / 1000 / 60;
+                    int64 secs = (l.time_ms / 1000) % 60;
+                    int64 ms = (l.time_ms % 1000) / 10;
+                    sb.append ("[%02lld:%02lld.%02lld]".printf (mins, secs, ms));
+                    sb.append (l.text);
+                    sb.append_c ('\n');
+                }
+            } else {
+                foreach (var l in lines) {
+                    if (l.text.length > 0) {
+                        sb.append (l.text);
+                        sb.append_c ('\n');
+                    }
+                }
+            }
+            return sb.str;
         }
 
         private int64 ttml_time_to_ms (string t) {
