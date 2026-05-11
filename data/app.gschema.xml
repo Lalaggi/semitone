@@ -118,6 +118,10 @@
       <default>true</default>
       <summary>Fetch lyrics from SimpMusic</summary>
     </key>
+    <key name="lyrics-lyricsplus-enabled" type="b">
+      <default>true</default>
+      <summary>Fetch lyrics from LyricsPlus</summary>
+    </key>
     <key name="lyrics-lrclib-enabled" type="b">
       <default>true</default>
       <summary>Fetch lyrics from LRCLib</summary>
@@ -151,7 +155,7 @@
       <summary>Fall back to plain text if no synced lyrics found</summary>
     </key>
     <key name="lyrics-provider-order" type="s">
-      <default>'paxsenix,simpmusic,lrclib,netease,megalobiz,genius,musixmatch'</default>
+      <default>'betterlyrics,simpmusic,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch'</default>
       <summary>Comma-separated provider priority order</summary>
     </key>
   </schema>

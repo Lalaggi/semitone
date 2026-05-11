@@ -12,7 +12,7 @@ A lightweight GTK4 music player written in Vala.
 - **Library** — Fast scanning of large collections, groups and sorts by album/artist/title, full-text search, file change monitoring
 - **Queue** — Queue viewer with cover art, drag to reorder
 - **Playlists** — Create, edit, and manage playlists, import/export M3U files
-- **Lyrics** — 8 providers (PaxSenix, BetterLyrics, SimpMusic, LRCLib, NetEase, Megalobiz, Genius, Musixmatch), synced lyrics with word-by-word highlighting, auto-scroll, click-to-seek, auto-select best match
+- **Lyrics** — 9 providers (PaxSenix, BetterLyrics, SimpMusic, LyricsPlus, LRCLib, NetEase, Megalobiz, Genius, Musixmatch), synced lyrics with word-by-word highlighting, auto-scroll, click-to-seek, auto-select best match
 - **Visuals** — Gaussian blurred cover art background, follows system light/dark mode, adaptive layout for desktop/tablet/mobile, audio peak visualizer
 - **Audio** — ReplayGain volume normalization (track/album), configurable audio sink
 - **Formats** — Supports most audio formats via GStreamer (MP3, FLAC, OGG, OPUS, M4A, WAV, etc.)

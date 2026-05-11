@@ -15,6 +15,7 @@ namespace G4 {
         { "paxsenix",    "PaxSenix",      "Synced LRC lyrics via PaxSenix"                        },
         { "betterlyrics", "BetterLyrics",  "Word-timed TTML lyrics (synced)"                    },
         { "simpmusic",    "SimpMusic",      "Word-timed lyrics for YouTube Music tracks (synced)" },
+        { "lyricsplus",   "LyricsPlus",     "Synced lyrics via LyricsPlus (Apple/Musixmatch)"     },
         { "lrclib",       "LRCLib",         "Synced and plain lyrics via LRCLib"                  },
         { "netease",      "NetEase",        "Synced LRC lyrics from NetEase Music"                },
         { "megalobiz",    "Megalobiz",      "Plain text lyrics via Megalobiz (scraping)"          },
@@ -23,7 +24,7 @@ namespace G4 {
     };
 
     private const string DEFAULT_PROVIDER_ORDER =
-        "paxsenix,betterlyrics,simpmusic,lrclib,netease,megalobiz,genius,musixmatch";
+        "betterlyrics,simpmusic,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch";
 
     [GtkTemplate (ui = "/com/github/lalaggi/semitone/gtk/preferences.ui")]
     public class PreferencesWindow : Adw.PreferencesWindow {

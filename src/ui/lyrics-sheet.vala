@@ -13,7 +13,7 @@ namespace G4 {
         public bool is_bg;
     }
 
-    public static bool lyrics_debug_enabled = false;
+    public static bool lyrics_debug_enabled = false; // Set to false for release
 
     public class LyricsSheet : Object {
         private Application _app;
@@ -31,7 +31,7 @@ namespace G4 {
         private string _current_raw = "";
         public Adw.BottomSheet bottom_sheet;
 
-        private const int PROVIDER_TIMEOUT_MS = 15000;
+        private const int PROVIDER_TIMEOUT_MS = 5000;
         private const int PROVIDER_FAIL_TIMEOUT_MS = 60000;
         private bool _timeout_triggered = false;
         private LyricsCandidate? _best_candidate = null;
@@ -40,6 +40,7 @@ namespace G4 {
         private bool _loading_completed = false;
         private GLib.Mutex _candidate_lock = GLib.Mutex ();
         private bool _is_instrumental = false;
+        private bool _loading_in_progress = false;
 
         private static Soup.Session? _http_session = null;
 
@@ -535,6 +536,14 @@ namespace G4 {
             update_offset_label ();
             set_provider (provider + " (cached)");
 
+            if (provider == "instrumental" || raw == "[instrumental]") {
+                log ("Cache: track is marked as instrumental");
+                _is_instrumental = true;
+                _lines = {};
+                show_instrumental ();
+                return true;
+            }
+
             if (try_parse_synced (raw)) {
                 log ("Cache: synced parsed %d lines".printf (_lines.length));
                 _is_synced = true;
@@ -717,6 +726,11 @@ namespace G4 {
         // ── Main load ────────────────────────────────────────────────
 
         private async void load_lyrics () {
+            if (_loading_in_progress) {
+                log ("load_lyrics: already in progress, skipping");
+                return;
+            }
+            _loading_in_progress = true;
             _lines = {};
             _is_synced = false;
             _current_index = -1;
@@ -734,6 +748,7 @@ namespace G4 {
             var music = _app.current_music;
             if (music == null) {
                 log ("No current music, aborting");
+                _loading_in_progress = false;
                 show_not_found ();
                 return;
             }
@@ -746,6 +761,7 @@ namespace G4 {
             log ("Checking cache...");
             if (load_cache (_current_uri)) {
                 log ("Loaded from cache, %d lines".printf (_lines.length));
+                _loading_in_progress = false;
                 populate_list ();
                 return;
             }
@@ -782,7 +798,7 @@ namespace G4 {
 
             var order_str = settings.get_string ("lyrics-provider-order");
             if (order_str == "")
-                order_str = "paxsenix,simpmusic,lrclib,netease,megalobiz,genius,musixmatch";
+                order_str = "paxsenix,betterlyrics,simpmusic,lyricsplus,lrclib,netease,megalobiz,genius,musixmatch";
             string[] provider_order = order_str.split (",");
 
             var timeout_id = Timeout.add (PROVIDER_TIMEOUT_MS, () => {
@@ -810,23 +826,12 @@ namespace G4 {
                         if (parsed.length > 0) {
                             synced = true;
                         } else {
-                            parsed = parse_ttml ((!)raw);
+                            parsed = parse_lrc ((!)raw);
                             if (parsed.length > 0) {
-                                synced = false;
-                                foreach (var l in parsed) {
-                                    if (l.time_ms >= 0) {
-                                        synced = true;
-                                        break;
-                                    }
-                                }
+                                synced = true;
                             } else {
-                                parsed = parse_lrc ((!)raw);
-                                if (parsed.length > 0) {
-                                    synced = true;
-                                } else {
-                                    parsed = parse_plain ((!)raw);
-                                    synced = false;
-                                }
+                                parsed = parse_plain ((!)raw);
+                                synced = false;
                             }
                         }
                         if (parsed.length > 0) {
@@ -848,15 +853,16 @@ namespace G4 {
                     var duration_sec = (int) (GstPlayer.to_second (_app.player.duration));
                     var raw = yield fetch_betterlyrics (m.title, m.artist, m.album, duration_sec);
                     if (raw != null) {
-                        var parsed = parse_ttml ((!)raw);
+                        LyricLine[] parsed = {};
+                        bool synced = false;
+                        if (parse_rich_sync ((!)raw).length > 0) {
+                            parsed = parse_rich_sync ((!)raw); synced = true;
+                        } else if (parse_lrc ((!)raw).length > 0) {
+                            parsed = parse_lrc ((!)raw); synced = true;
+                        } else if (parse_plain ((!)raw).length > 0) {
+                            parsed = parse_plain ((!)raw); synced = false;
+                        }
                         if (parsed.length > 0) {
-                            bool synced = false;
-                            foreach (var l in parsed) {
-                                if (l.time_ms >= 0) {
-                                    synced = true;
-                                    break;
-                                }
-                            }
                             var score = score_candidate (parsed, synced, (!)raw, pi, "BetterLyrics");
                             log ("BetterLyrics: %d lines synced=%s, score=%.1f".printf (parsed.length, synced.to_string (), score));
                             LyricsCandidate c = { (!)raw, "BetterLyrics", parsed, synced, score };
@@ -878,19 +884,15 @@ namespace G4 {
                     }
                     log ("Trying SimpMusic (%s)...".printf ((!)yt_id));
                     var raw = yield fetch_simpmusic ((!)yt_id);
-                    if (raw != null) {
+if (raw != null) {
                         LyricLine[] parsed = {};
                         bool synced = false;
-                        if (parse_rich_sync ((!)raw).length > 0) {
+                        bool has_word_timing = ((!)raw).contains ("<") && ((!)raw).contains (">");
+                        if (has_word_timing && parse_rich_sync ((!)raw).length > 0) {
                             parsed = parse_rich_sync ((!)raw); synced = true;
-                        } else if (parse_ttml ((!)raw).length > 0) {
-                            parsed = parse_ttml ((!)raw);
-                            foreach (var l in parsed) {
-                                if (l.time_ms >= 0) { synced = true; break; }
-                            }
                         } else if (parse_lrc ((!)raw).length > 0) {
                             parsed = parse_lrc ((!)raw); synced = true;
-                        } else {
+                        } else if (parse_plain ((!)raw).length > 0) {
                             parsed = parse_plain ((!)raw); synced = false;
                         }
                         if (parsed.length > 0) {
@@ -904,6 +906,35 @@ namespace G4 {
                         log ("SimpMusic: no response");
                     }
 
+                } else if (pid == "lyricsplus") {
+                    if (!settings.get_boolean ("lyrics-lyricsplus-enabled")) {
+                        log ("LyricsPlus: disabled"); continue;
+                    }
+                    log ("Trying LyricsPlus...");
+                    var duration_sec = (int) (GstPlayer.to_second (_app.player.duration));
+                    var raw = yield fetch_lyricsplus (m.title, m.artist, m.album, duration_sec);
+                    if (raw != null) {
+                        LyricLine[] parsed = {};
+                        bool synced = false;
+                        if (parse_rich_sync ((!)raw).length > 0) {
+                            parsed = parse_rich_sync ((!)raw); synced = true;
+                        } else if (parse_lrc ((!)raw).length > 0) {
+                            parsed = parse_lrc ((!)raw); synced = true;
+                        } else if (parse_plain ((!)raw).length > 0) {
+                            parsed = parse_plain ((!)raw); synced = false;
+                        }
+                        if (parsed.length > 0) {
+                            var score = score_candidate (parsed, synced, (!)raw, pi, "LyricsPlus");
+                            log ("LyricsPlus: %d lines synced=%s, score=%.1f".printf (parsed.length, synced.to_string (), score));
+                            LyricsCandidate c = { (!)raw, "LyricsPlus", parsed, synced, score };
+                            process_candidate (c);
+                        } else {
+                            log ("LyricsPlus: parse returned 0 lines");
+                        }
+                    } else {
+                        log ("LyricsPlus: no response");
+                    }
+
                 } else if (pid == "lrclib") {
                     if (!settings.get_boolean ("lyrics-lrclib-enabled")) {
                         log ("LRCLib: disabled"); continue;
@@ -913,8 +944,10 @@ namespace G4 {
                     if (result != null) {
                         var lr = (!)result;
                         if (lr.instrumental) {
-                            log ("LRCLib: track marked as instrumental");
+                            log ("LRCLib: track marked as instrumental, skipping other providers");
                             _is_instrumental = true;
+                            trigger_timeout ();
+                            break;
                         }
                         if (lr.synced.length > 0) {
                             var parsed = parse_lrc (lr.synced);
@@ -1028,6 +1061,7 @@ namespace G4 {
             _candidate_lock.lock ();
             var best_candidate = _best_candidate;
             _loading_completed = true;
+            _loading_in_progress = false;
             _candidate_lock.unlock ();
 
             Source.remove (timeout_id);
@@ -1035,8 +1069,14 @@ namespace G4 {
             if (best_candidate == null) {
                 log ("All providers failed or returned nothing");
                 set_provider ("");
-                if (_is_instrumental) show_instrumental ();
-                else show_not_found ();
+                if (_is_instrumental) {
+                    log ("Track is instrumental, caching and showing");
+                    _current_raw = "[instrumental]";
+                    save_cache (_current_uri, _current_raw, "instrumental", 0);
+                    show_instrumental ();
+                } else {
+                    show_not_found ();
+                }
                 return;
             }
             var best = (!)best_candidate;
@@ -1435,8 +1475,7 @@ namespace G4 {
                 clean_title, clean_artist, duration_ms));
 
             string[] queries = {
-                "%s %s".printf (clean_title, clean_artist),
-                clean_title
+                "%s %s".printf (clean_title, clean_artist)
             };
             if (album.length > 0)
                 queries += "%s %s %s".printf (clean_title, clean_artist, album);
@@ -1533,7 +1572,28 @@ namespace G4 {
                     return null;
                 }
                 if (obj.has_member ("ttml")) {
-                    return obj.get_string_member ("ttml");
+                    var ttml = obj.get_string_member ("ttml");
+                    if (G4.lyrics_debug_enabled) {
+                        print ("[DEBUG] BetterLyrics raw TTML (%d chars): %s\n", ttml.length, ttml.substring (0, int.min (500, ttml.length)));
+                    }
+                    var lines = parse_ttml (ttml);
+                    if (lines.length > 0) {
+                        var converted = lyrics_lines_to_richsync (lines);
+                        bool has_word_timing = false;
+                        bool has_line_timing = false;
+                        foreach (var l in lines) {
+                            if (l.words.length > 0) { has_word_timing = true; break; }
+                        }
+                        if (!has_word_timing) {
+                            foreach (var l in lines) {
+                                if (l.time_ms >= 0) { has_line_timing = true; break; }
+                            }
+                        }
+                        string format = has_word_timing ? "richsync" : (has_line_timing ? "LRC" : "plain");
+                        log ("BetterLyrics: converted TTML to %s format, %d chars".printf (format, converted.length));
+                        return converted;
+                    }
+                    return null;
                 }
                 if (obj.has_member ("lyrics")) {
                     return obj.get_string_member ("lyrics");
@@ -1543,6 +1603,105 @@ namespace G4 {
                 log ("BetterLyrics: JSON parse error: %s".printf (e.message));
                 return null;
             }
+        }
+
+        // ── LyricsPlus ────────────────────────────────────────────────
+
+        private async string? fetch_lyricsplus (string title, string artist, string album, int duration) {
+            string[] base_urls = {
+                "https://lyricsplus.binimum.org",
+                "https://lyricsplus.atomix.one",
+                "https://lyricsplus-seven.vercel.app",
+                "https://lyricsplus.prjktla.workers.dev",
+                "https://lyrics-plus-backend.vercel.app"
+            };
+            string? result = null;
+            foreach (var base_url in base_urls) {
+                var url = "%s/v2/lyrics/get?title=%s&artist=%s&duration=%d&source=apple,lyricsplus,musixmatch,spotify,musixmatch-word".printf (
+                    base_url,
+                    Uri.escape_string (title, null, false),
+                    Uri.escape_string (artist, null, false),
+                    duration);
+                if (album.length > 0) {
+                    url += "&album=%s".printf (Uri.escape_string (album, null, false));
+                }
+                log ("LyricsPlus: trying %s".printf (base_url));
+                var body = yield http_get (url);
+                if (body != null && ((!)body).length > 0) {
+                    try {
+                        var parser = new Json.Parser ();
+                        parser.load_from_data ((!)body);
+                        var root_obj = parser.get_root ()?.get_object ();
+                        if (root_obj != null) {
+                            var obj = (!)root_obj;
+                            var type = obj.has_member ("type") ? obj.get_string_member ("type") : "Line";
+                            if (obj.has_member ("lyrics")) {
+var lyrics_arr = obj.get_array_member ("lyrics");
+                                    if (lyrics_arr != null && ((!)lyrics_arr).get_length () > 0) {
+                                        log ("LyricsPlus: got lyrics from %s, type=%s".printf (base_url, type));
+                                        result = convert_lyricsplus_json ((!)lyrics_arr, type);
+                                        break;
+                                    }
+                            }
+                        }
+                    } catch (Error e) {
+                        log ("LyricsPlus: parse error from %s: %s".printf (base_url, e.message));
+                    }
+                }
+            }
+            return result;
+        }
+
+        private string convert_lyricsplus_json (Json.Array lyrics_arr, string type) {
+            var sb = new StringBuilder ();
+            if (type == "Word") {
+                int64 prev_time = -1;
+                lyrics_arr.foreach_element ((arr, i, node) => {
+                    var obj_n = node.get_object ();
+                    if (obj_n == null) return;
+                    var lyric_obj = (!)obj_n;
+
+                    var time_ms = lyric_obj.get_int_member ("time");
+                    var text = lyric_obj.get_string_member ("text");
+                    if (text.length == 0) return;
+
+                    bool new_line = (prev_time < 0) || (time_ms - prev_time > 2000);
+                    if (new_line) {
+                        if (sb.len > 0 && sb.str[sb.len - 1] != '\n') sb.append_c ('\n');
+                        int64 mins = time_ms / 1000 / 60;
+                        int64 secs = (time_ms / 1000) % 60;
+                        int64 ms = (time_ms % 1000) / 10;
+                        sb.append ("[%02lld:%02lld.%02lld]".printf (mins, secs, ms));
+                        sb.append ("<%02lld:%02lld.%02lld>".printf (mins, secs, ms));
+                    } else {
+                        int64 w_mins = time_ms / 1000 / 60;
+                        int64 w_secs = (time_ms / 1000) % 60;
+                        int64 w_ms = (time_ms % 1000) / 10;
+                        sb.append ("<%02lld:%02lld.%02lld>".printf (w_mins, w_secs, w_ms));
+                    }
+                    sb.append (text);
+                    prev_time = time_ms;
+                });
+                if (sb.len > 0) sb.append_c ('\n');
+            } else {
+                lyrics_arr.foreach_element ((arr, i, node) => {
+                    var obj_n = node.get_object ();
+                    if (obj_n == null) return;
+                    var lyric_obj = (!)obj_n;
+
+                    var time_ms = lyric_obj.get_int_member ("time");
+                    var text = lyric_obj.get_string_member ("text");
+                    if (text.length == 0) return;
+
+                    int64 mins = time_ms / 1000 / 60;
+                    int64 secs = (time_ms / 1000) % 60;
+                    int64 ms = (time_ms % 1000) / 10;
+                    sb.append ("[%02lld:%02lld.%02lld]".printf (mins, secs, ms));
+                    sb.append (text);
+                    sb.append_c ('\n');
+                });
+            }
+            return sb.str;
         }
 
         // ── SimpMusic ────────────────────────────────────────────────
@@ -2048,6 +2207,40 @@ LyricLine[] result = {};
                         sb.append_c ('\n');
                     }
                 }
+            }
+            return sb.str;
+        }
+
+        private string lyrics_lines_to_richsync (LyricLine[] lines) {
+            var sb = new StringBuilder ();
+            bool has_word_timing = false;
+            foreach (var l in lines) {
+                if (l.words.length > 0) {
+                    has_word_timing = true;
+                    break;
+                }
+            }
+            if (!has_word_timing) {
+                return lyrics_lines_to_string (lines);
+            }
+            foreach (var l in lines) {
+                if (l.time_ms < 0) continue;
+                int64 mins = l.time_ms / 1000 / 60;
+                int64 secs = (l.time_ms / 1000) % 60;
+                int64 ms = (l.time_ms % 1000) / 10;
+                sb.append ("[%02lld:%02lld.%02lld]".printf (mins, secs, ms));
+                if (l.words.length > 0) {
+                    foreach (var w in l.words) {
+                        int64 w_mins = (int64) w.start_sec / 60;
+                        int64 w_secs = (int64) w.start_sec % 60;
+                        int64 w_ms = (int64) ((w.start_sec - (int64) w.start_sec) * 100);
+                        sb.append ("<%02lld:%02lld.%02lld>".printf (w_mins, w_secs, w_ms));
+                        sb.append (w.text);
+                    }
+                } else {
+                    sb.append (l.text);
+                }
+                sb.append_c ('\n');
             }
             return sb.str;
         }
