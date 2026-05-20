@@ -447,7 +447,7 @@ namespace G4 {
                 save_cache (_current_uri, new_raw, _provider_label.label, _offset_ms);
                 _lines = {};
                 _current_index = -1;
-                _lines = parse_rich_sync (new_raw);
+                _lines = parse_extended_lrc (new_raw);
                 if (_lines.length == 0)
                     _lines = parse_ttml (new_raw);
                 if (_lines.length == 0)
@@ -603,7 +603,7 @@ namespace G4 {
         // ── Helpers ──────────────────────────────────────────────────
 
         private bool try_parse_synced (string raw) {
-            _lines = parse_rich_sync (raw);
+            _lines = parse_extended_lrc (raw);
             if (_lines.length > 0) return true;
             _lines = parse_ttml (raw);
             if (_lines.length > 0) return true;
@@ -822,7 +822,7 @@ namespace G4 {
                     if (raw != null) {
                         LyricLine[] parsed = {};
                         bool synced = false;
-                        parsed = parse_rich_sync ((!)raw);
+                        parsed = parse_extended_lrc ((!)raw);
                         if (parsed.length > 0) {
                             synced = true;
                         } else {
@@ -855,8 +855,8 @@ namespace G4 {
                     if (raw != null) {
                         LyricLine[] parsed = {};
                         bool synced = false;
-                        if (parse_rich_sync ((!)raw).length > 0) {
-                            parsed = parse_rich_sync ((!)raw); synced = true;
+                        if (parse_extended_lrc ((!)raw).length > 0) {
+                            parsed = parse_extended_lrc ((!)raw); synced = true;
                         } else if (parse_lrc ((!)raw).length > 0) {
                             parsed = parse_lrc ((!)raw); synced = true;
                         } else if (parse_plain ((!)raw).length > 0) {
@@ -878,18 +878,24 @@ namespace G4 {
                     if (!settings.get_boolean ("lyrics-simpmusic-enabled")) {
                         log ("SimpMusic: disabled"); continue;
                     }
-                    var yt_id = extract_youtube_id (m.comment);
+                    string? yt_id = get_youtube_id_from_all_metadata (m.uri);
                     if (yt_id == null) {
-                        log ("SimpMusic: no YouTube ID in comment tag, skipping"); continue;
+                        yt_id = extract_youtube_id (m.comment);
+                        if (yt_id != null) {
+                            log ("Found YouTube ID in comment field (fallback): %s".printf ((!)yt_id));
+                        }
                     }
-                    log ("Trying SimpMusic (%s)...".printf ((!)yt_id));
+                    if (yt_id == null) {
+                        log ("SimpMusic: no YouTube ID found in any metadata, skipping"); continue;
+                    }
+                    log ("SimpMusic: using YouTube ID %s".printf ((!)yt_id));
                     var raw = yield fetch_simpmusic ((!)yt_id);
 if (raw != null) {
                         LyricLine[] parsed = {};
                         bool synced = false;
                         bool has_word_timing = ((!)raw).contains ("<") && ((!)raw).contains (">");
-                        if (has_word_timing && parse_rich_sync ((!)raw).length > 0) {
-                            parsed = parse_rich_sync ((!)raw); synced = true;
+                        if (has_word_timing && parse_extended_lrc ((!)raw).length > 0) {
+                            parsed = parse_extended_lrc ((!)raw); synced = true;
                         } else if (parse_lrc ((!)raw).length > 0) {
                             parsed = parse_lrc ((!)raw); synced = true;
                         } else if (parse_plain ((!)raw).length > 0) {
@@ -916,8 +922,8 @@ if (raw != null) {
                     if (raw != null) {
                         LyricLine[] parsed = {};
                         bool synced = false;
-                        if (parse_rich_sync ((!)raw).length > 0) {
-                            parsed = parse_rich_sync ((!)raw); synced = true;
+                        if (parse_extended_lrc ((!)raw).length > 0) {
+                            parsed = parse_extended_lrc ((!)raw); synced = true;
                         } else if (parse_lrc ((!)raw).length > 0) {
                             parsed = parse_lrc ((!)raw); synced = true;
                         } else if (parse_plain ((!)raw).length > 0) {
@@ -1005,20 +1011,20 @@ if (raw != null) {
 
                 } else if (pid == "genius") {
                     if (!settings.get_boolean ("lyrics-genius-enabled")) {
-                        log ("LyricGenius: disabled"); continue;
+                        log ("Genius: disabled"); continue;
                     }
-                    log ("Trying LyricGenius...");
+                    log ("Trying Genius...");
                     var raw = yield fetch_genius (m.title, m.artist);
                     if (raw != null) {
                         var parsed = parse_plain ((!)raw);
                         if (parsed.length > 0) {
-                            var score = score_candidate (parsed, false, (!)raw, pi, "LyricGenius");
-                            log ("LyricGenius: %d lines, score=%.1f".printf (parsed.length, score));
-                            LyricsCandidate c = { (!)raw, "LyricGenius", parsed, false, score };
+                            var score = score_candidate (parsed, false, (!)raw, pi, "Genius");
+                            log ("Genius: %d lines, score=%.1f".printf (parsed.length, score));
+                            LyricsCandidate c = { (!)raw, "Genius", parsed, false, score };
                             process_candidate (c);
                         }
                     } else {
-                        log ("LyricGenius: no response");
+                        log ("Genius: no response");
                     }
 
                 } else if (pid == "musixmatch") {
@@ -1578,7 +1584,7 @@ if (raw != null) {
                     }
                     var lines = parse_ttml (ttml);
                     if (lines.length > 0) {
-                        var converted = lyrics_lines_to_richsync (lines);
+                        var converted = lyrics_lines_to_extended_lrc (lines);
                         bool has_word_timing = false;
                         bool has_line_timing = false;
                         foreach (var l in lines) {
@@ -1589,7 +1595,7 @@ if (raw != null) {
                                 if (l.time_ms >= 0) { has_line_timing = true; break; }
                             }
                         }
-                        string format = has_word_timing ? "richsync" : (has_line_timing ? "LRC" : "plain");
+                        string format = has_word_timing ? "ExtendedLRC" : (has_line_timing ? "LRC" : "plain");
                         log ("BetterLyrics: converted TTML to %s format, %d chars".printf (format, converted.length));
                         return converted;
                     }
@@ -1639,7 +1645,7 @@ if (raw != null) {
 var lyrics_arr = obj.get_array_member ("lyrics");
                                     if (lyrics_arr != null && ((!)lyrics_arr).get_length () > 0) {
                                         log ("LyricsPlus: got lyrics from %s, type=%s".printf (base_url, type));
-                                        result = convert_lyricsplus_json ((!)lyrics_arr, type);
+                                        result = convert_richsync_json ((!)lyrics_arr, type);
                                         break;
                                     }
                             }
@@ -1652,7 +1658,7 @@ var lyrics_arr = obj.get_array_member ("lyrics");
             return result;
         }
 
-        private string convert_lyricsplus_json (Json.Array lyrics_arr, string type) {
+        private string convert_richsync_json (Json.Array lyrics_arr, string type) {
             var sb = new StringBuilder ();
             if (type == "Word") {
                 int64 prev_time = -1;
@@ -1704,18 +1710,177 @@ var lyrics_arr = obj.get_array_member ("lyrics");
             return sb.str;
         }
 
+        // ── Metadata-based YouTube ID Extraction ─────────────────────
+
+        private string? get_all_string_metadata_text (string uri) {
+            var file = GLib.File.new_for_uri (uri);
+            if (!file.query_exists ()) {
+                log ("File does not exist: %s".printf (uri));
+                return null;
+            }
+
+            var tags = G4.parse_gst_tags (file);
+            if (tags == null) {
+                log ("No tags found for: %s".printf (uri));
+                return null;
+            }
+
+            var sb = new GLib.StringBuilder ();
+            var tag_list = (!)tags;
+
+            string[] string_tags = {
+                Gst.Tags.TITLE,
+                Gst.Tags.ARTIST,
+                Gst.Tags.ALBUM,
+                Gst.Tags.ALBUM_ARTIST,
+                Gst.Tags.GENRE,
+                Gst.Tags.COMMENT,
+                Gst.Tags.EXTENDED_COMMENT,
+                Gst.Tags.COMPOSER,
+                Gst.Tags.LYRICS,
+                Gst.Tags.CONDUCTOR,
+                Gst.Tags.PERFORMER,
+                Gst.Tags.ENCODER,
+                Gst.Tags.ENCODED_BY,
+                Gst.Tags.COPYRIGHT,
+                Gst.Tags.LICENSE,
+                Gst.Tags.LOCATION,
+                Gst.Tags.HOMEPAGE,
+                Gst.Tags.DESCRIPTION,
+                Gst.Tags.VERSION,
+                Gst.Tags.ISRC,
+                Gst.Tags.ORGANIZATION,
+                Gst.Tags.CONTACT
+            };
+
+            foreach (var tag_name in string_tags) {
+                var values = new GLib.GenericArray<string> ();
+                G4.get_one_tag (tag_list, tag_name, values);
+
+                foreach (var value in values) {
+                    var trimmed = value.strip ();
+                    if (trimmed.length > 0) {
+                        sb.append (trimmed).append ("\n");
+                        if (lyrics_debug_enabled) {
+                            var truncated = trimmed.length > 100 ?
+                                trimmed.substring (0, 100) + "..." : trimmed;
+                            log ("Metadata: %s = %s".printf (tag_name, truncated));
+                        }
+                    }
+                }
+            }
+
+            for (var i = 0; i < tag_list.n_tags (); i++) {
+                var tag_name = tag_list.nth_tag_name (i);
+                bool already_processed = false;
+                foreach (var known_tag in string_tags) {
+                    if (tag_name == known_tag) {
+                        already_processed = true;
+                        break;
+                    }
+                }
+
+                if (!already_processed) {
+                    var values = new GLib.GenericArray<string> ();
+                    G4.get_one_tag (tag_list, tag_name, values);
+
+                    foreach (var value in values) {
+                        var trimmed = value.strip ();
+                        if (trimmed.length > 0) {
+                            sb.append (trimmed).append ("\n");
+                            if (lyrics_debug_enabled) {
+                                var truncated = trimmed.length > 100 ?
+                                    trimmed.substring (0, 100) + "..." : trimmed;
+                                log ("Additional metadata: %s = %s".printf (tag_name, truncated));
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (sb.str.length > 0) {
+                return sb.str;
+            }
+            return null;
+        }
+
+        private static string? extract_youtube_id_from_text (string text, out string? found_in_tag = null) {
+            found_in_tag = null;
+
+            if (text.length == 0) return null;
+
+            try {
+                var main_regex = "(?:youtu\\.be/|(?:music\\.)?youtube\\.com/(?:watch\\?v=|v/|embed/|shorts/))([A-Za-z0-9_-]{11})";
+                var re = new GLib.Regex (main_regex, GLib.RegexCompileFlags.CASELESS | GLib.RegexCompileFlags.MULTILINE, 0);
+
+                GLib.MatchInfo info;
+                if (re.match (text, 0, out info)) {
+                    var yt_id = info.fetch (1);
+                    if (yt_id != null && ((!)yt_id).length == 11) {
+                        return (!)yt_id;
+                    }
+                }
+
+                var purl_regex = "purl=(?:https?://)?(?:www\\.)?(?:music\\.)?(?:youtube\\.com/watch\\?v=|youtu\\.be/)([A-Za-z0-9_-]{11})";
+                var purl_re = new GLib.Regex (purl_regex, GLib.RegexCompileFlags.CASELESS | GLib.RegexCompileFlags.MULTILINE, 0);
+
+                if (purl_re.match (text, 0, out info)) {
+                    var yt_id = info.fetch (1);
+                    if (yt_id != null && ((!)yt_id).length == 11) {
+                        return (!)yt_id;
+                    }
+                }
+
+                var param_regex = "(?:v=|/)([A-Za-z0-9_-]{11})(?:&|\\s|$|\")";
+                var param_re = new GLib.Regex (param_regex, GLib.RegexCompileFlags.CASELESS | GLib.RegexCompileFlags.MULTILINE, 0);
+
+                if (param_re.match (text, 0, out info)) {
+                    var yt_id = info.fetch (1);
+                    if (yt_id != null && ((!)yt_id).length == 11) {
+                        return (!)yt_id;
+                    }
+                }
+
+            } catch (GLib.RegexError e) {
+                GLib.message ("[Lyrics] Regex error in YouTube ID extraction: %s".printf (e.message));
+            }
+
+            return null;
+        }
+
+        private string? get_youtube_id_from_all_metadata (string uri) {
+            log ("Searching for YouTube ID in all metadata of: %s".printf (uri));
+
+            var metadata_text = get_all_string_metadata_text (uri);
+            if (metadata_text == null) {
+                log ("No metadata text available");
+                return null;
+            }
+
+            var text = (!)metadata_text;
+
+            if (lyrics_debug_enabled) {
+                var truncated = text.length > 500 ? text.substring (0, 500) + "..." : text;
+                log ("Metadata text (%d chars):\n%s".printf (text.length, truncated));
+            }
+
+            string? found_in_tag = null;
+            var yt_id = extract_youtube_id_from_text (text, out found_in_tag);
+
+            if (yt_id != null) {
+                log ("Found YouTube ID in metadata: %s".printf ((!)yt_id));
+                return yt_id;
+            }
+
+            log ("No YouTube ID found in any metadata fields");
+            return null;
+        }
+
         // ── SimpMusic ────────────────────────────────────────────────
 
         private static string? extract_youtube_id (string comment) {
-            if (comment.length == 0) return null;
-            try {
-                var re = new Regex (
-                    "(?:youtu\\.be/|youtube\\.com/(?:watch\\?v=|v/|embed/))([A-Za-z0-9_-]{11})");
-                MatchInfo info;
-                if (re.match (comment, 0, out info))
-                    return info.fetch (1);
-            } catch (RegexError e) {}
-            return null;
+            string? dummy;
+            return extract_youtube_id_from_text (comment, out dummy);
         }
 
         private async string? fetch_simpmusic (string video_id) {
@@ -1878,7 +2043,7 @@ var lyrics_arr = obj.get_array_member ("lyrics");
             }
         }
 
-        // ── LyricGenius ──────────────────────────────────────────────
+        // ── Genius ──────────────────────────────────────────────
 
         private async string? fetch_genius (string title, string artist) {
             var query = Uri.escape_string ("%s %s".printf (title, artist), null, false);
@@ -2211,7 +2376,7 @@ LyricLine[] result = {};
             return sb.str;
         }
 
-        private string lyrics_lines_to_richsync (LyricLine[] lines) {
+        private string lyrics_lines_to_extended_lrc (LyricLine[] lines) {
             var sb = new StringBuilder ();
             bool has_word_timing = false;
             foreach (var l in lines) {
@@ -2278,9 +2443,9 @@ LyricLine[] result = {};
             return sb.str;
         }
 
-        // ── richSyncLyrics parser ────────────────────────────────────
+        // ── Extended LRC parser ────────────────────────────────────
 
-        private LyricLine[] parse_rich_sync (string lrc) {
+        private LyricLine[] parse_extended_lrc (string lrc) {
             if (!lrc.contains ("<")) return {};
 
             LyricLine[] result = {};

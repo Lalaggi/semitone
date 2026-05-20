@@ -4,6 +4,10 @@ project(
   license: 'GPL3'
 )
 
+if get_option('prefix') != '/usr'
+  message('WARNING: prefix is ' + get_option('prefix') + ', not /usr. Install target: ' + get_option('prefix') / get_option('bindir') / 'semitone')
+endif
+
 app_id = 'org.codeberg.el1lovescomputers.' + meson.project_name()
 version = meson.project_version()
 

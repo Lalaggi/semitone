@@ -136,7 +136,7 @@
     </key>
     <key name="lyrics-genius-enabled" type="b">
       <default>false</default>
-      <summary>Enable LyricGenius provider</summary>
+      <summary>Enable Genius provider</summary>
     </key>
     <key name="lyrics-musixmatch-enabled" type="b">
       <default>false</default>
