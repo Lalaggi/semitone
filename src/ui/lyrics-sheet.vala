@@ -2461,6 +2461,10 @@ LyricLine[] result = {};
                 if (line_ms < 0) continue;
 
                 var rest = line.substring (close + 1);
+                // Strip any leading non-word prefix (e.g. "v1:", "v2:") before the first <
+                var first_tag = rest.index_of_char ('<');
+                if (first_tag > 0)
+                    rest = rest.substring (first_tag);
 
                 LyricWord[] words = {};
                 var text_sb = new StringBuilder ();
@@ -2600,8 +2604,11 @@ LyricLine[] result = {};
             var sec_parts = parts[1].split (".");
             if (sec_parts.length != 2) return -1;
             var seconds = int.parse (sec_parts[0]);
-            var centis = int.parse (sec_parts[1]);
-            return (int64) (minutes * 60 * 1000 + seconds * 1000 + centis * 10);
+            var frac = sec_parts[1];
+            var frac_val = int.parse (frac);
+            if (frac.length == 3)
+                return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val);
+            return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val * 10);
         }
 
         // ── CSS ──────────────────────────────────────────────────────
