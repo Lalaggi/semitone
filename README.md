@@ -22,7 +22,7 @@ A lightweight GTK4 music player written in Vala.
 
 **Arch Linux:**
 ```bash
-sudo pacman -S vala meson gtk4 libadwaita gstreamer gstreamer-plugins-base libsoup json-glib libxml2
+sudo pacman -S vala meson gtk4 libadwaita gstreamer gst-plugins-base libsoup3 json-glib libxml2
 ```
 
 **Debian/Ubuntu:**
