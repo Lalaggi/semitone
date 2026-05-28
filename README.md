@@ -32,7 +32,7 @@ sudo apt install vala meson libgtk-4-dev libadwaita-1-dev libgstreamer1.0-dev li
 
 **Fedora:**
 ```bash
-sudo dnf install vala meson gtk4-devel libadwaita-devel gstreamer-devel gstreamer-plugins-base-devel libsoup-devel json-glib-devel libxml2-devel
+sudo dnf install vala meson gtk4-devel libadwaita-devel gstreamer1-devel gstreamer1-plugins-base-devel libsoup3-devel json-glib-devel libxml2-devel
 ```
 
 ## Installation
