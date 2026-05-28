@@ -35,6 +35,21 @@ sudo apt install vala meson libgtk-4-dev libadwaita-1-dev libgstreamer1.0-dev li
 sudo dnf install vala meson gtk4-devel libadwaita-devel gstreamer1-devel gstreamer1-plugins-base-devel libsoup3-devel json-glib-devel libxml2-devel
 ```
 
+**OpenSUSE Tumbleweed**
+```bash
+sudo zypper install vala meson gtk4-devel libadwaita-devel gstreamer-devel gstreamer-plugins-base-devel libsoup3-devel json-glib-devel libxml2-devel
+```
+
+**Void Linux**
+```bash
+sudo xbps-install vala meson gtk4-devel libadwaita-devel gstreamer1-devel gst-plugins-base1-devel libsoup3-devel json-glib-devel libxml2-devel
+```
+
+**Alpine**
+```bash
+sudo apk add vala meson gtk4.0-dev libadwaita-dev gstreamer-dev gst-plugins-base-dev libsoup3-dev json-glib-dev libxml2-dev
+```
+
 ## Installation
 
 ### Flatpak
