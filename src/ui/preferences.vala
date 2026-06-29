@@ -5,27 +5,6 @@ namespace G4 {
         public const uint ART_ONLY = 2;
     }
 
-    private struct LyricsProviderInfo {
-        public string id;
-        public string display_name;
-        public string subtitle;
-    }
-
-    private const LyricsProviderInfo[] LYRICS_PROVIDERS = {
-        { "paxsenix",    "PaxSenix",      "Synced LRC lyrics via PaxSenix"                        },
-        { "betterlyrics", "BetterLyrics",  "Word-timed TTML lyrics (synced)"                    },
-        { "simpmusic",    "SimpMusic",      "Word-timed lyrics for YouTube Music tracks (synced)" },
-        { "lyricsplus",   "LyricsPlus",     "Synced lyrics via LyricsPlus (Apple/Musixmatch)"     },
-        { "lrclib",       "LRCLib",         "Synced and plain lyrics via LRCLib"                  },
-        { "netease",      "NetEase",        "Synced LRC lyrics from NetEase Music"                },
-        { "megalobiz",    "Megalobiz",      "Plain text lyrics via Megalobiz (scraping)"          },
-        { "genius",       "Genius",         "Plain text lyrics via Genius (scraping)"             },
-        { "musixmatch",   "Musixmatch",     "Plain text lyrics (requires API key)"                },
-    };
-
-    private const string DEFAULT_PROVIDER_ORDER =
-        "betterlyrics,simpmusic,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch";
-
     [GtkTemplate (ui = "/com/github/lalaggi/semitone/gtk/preferences.ui")]
     public class PreferencesWindow : Adw.PreferencesWindow {
         [GtkChild]

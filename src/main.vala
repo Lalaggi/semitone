@@ -28,7 +28,7 @@ int main (string[] args) {
 
     for (var i = 1; i < args.length; i++) {
         if (args[i] == "-v" || args[i] == "--debug") {
-            G4.lyrics_debug_enabled = false;
+            G4.lyrics_debug_enabled = true;
         } else if (args[i] == "--help" || args[i] == "-h") {
             print ("Usage: %s [OPTIONS]\n", args[0]);
             print ("  -v, --debug    Enable debug output for lyrics\n");

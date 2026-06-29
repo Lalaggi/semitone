@@ -14,6 +14,7 @@ src/ui/play-bar.vala
 src/ui/play-panel.vala
 src/ui/playlist-dialog.vala
 src/ui/preferences.vala
+src/lyrics/lyrics-sheet.vala
 src/ui/store-panel.vala
 src/ui/taglist-dialog.vala
 src/ui/volume-button.vala

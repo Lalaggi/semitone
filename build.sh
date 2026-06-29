@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 if ! ls /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null; then
   echo "Installing qemu-user-static-binfmt for aarch64 cross-compilation..."
-  paru -S --noconfirm qemu-user-static-binfmt || sudo pacman -S --noconfirm qemu-user-static-binfmt
+  paru -S --noconfirm qemu-user-static-binfmt
 fi
 
 echo "=== Building Flatpak x86-64 bundle ==="
@@ -15,8 +15,6 @@ flatpak build-bundle flatpak-repo-x64 flatpak-downloads/Semitone-x86-64.flatpak 
 rm -rf flatpak-build-x64 flatpak-repo-x64
 
 echo "=== Building Flatpak arm64 bundle ==="
-GNOME_RUNTIME_VERSION=$(jq -r '.["runtime-version"]' pkgs/flatpak/org.codeberg.el1lovescomputers.semitone.json)
-flatpak install -u flathub "org.gnome.Platform/aarch64/${GNOME_RUNTIME_VERSION}" "org.gnome.Sdk/aarch64/${GNOME_RUNTIME_VERSION}" || true
 if flatpak-builder --force-clean --user --install-deps-from=flathub --arch=aarch64 flatpak-build-arm64 pkgs/flatpak/org.codeberg.el1lovescomputers.semitone.json; then
   flatpak build-export flatpak-repo-arm64 flatpak-build-arm64
   flatpak build-bundle flatpak-repo-arm64 flatpak-downloads/Semitone-arm64.flatpak org.codeberg.el1lovescomputers.semitone --arch=aarch64
