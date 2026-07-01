@@ -42,6 +42,7 @@ sources = [
   'lyrics/providers/megalobiz.vala',
   'lyrics/providers/genius.vala',
   'lyrics/providers/musixmatch.vala',
+  'lyrics/providers/musicbrainz.vala',
   'lyrics/lyrics-sheet.vala',
   'utils/discord-rpc.vala',
   'utils/async-task.vala',

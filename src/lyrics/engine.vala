@@ -75,7 +75,7 @@ namespace G4 {
             }
         }
 
-        public async LyricsCandidate? load_lyrics (Music music, Settings settings) {
+        public async LyricsCandidate? load_lyrics (Music music, Settings settings, GLib.Cancellable? cancellable = null) {
             _timeout_triggered = false;
             _best_candidate = null;
             _best_candidate_score = 0.0;
@@ -86,7 +86,8 @@ namespace G4 {
             string[] provider_order = order_str.split (",");
 
             var app = (Application) GLib.Application.get_default ();
-            var duration_ms = (int) (GstPlayer.to_second (app.player.duration) * 1000);
+            var duration = app.player.duration;
+            var duration_ms = duration != Gst.CLOCK_TIME_NONE ? (int) (GstPlayer.to_second (duration) * 1000) : 0;
 
             var timeout_id = Timeout.add (PROVIDER_TIMEOUT_MS, () => {
                 trigger_timeout ();
@@ -94,11 +95,16 @@ namespace G4 {
             });
 
             for (int pi = 0; pi < provider_order.length; pi++) {
+                if (cancellable != null && ((!)cancellable).is_cancelled ()) {
+                    lyrics_log ("load_lyrics: cancelled, stopping provider loop");
+                    break;
+                }
                 var pid = provider_order[pi].strip ();
                 lyrics_log ("Trying %s...".printf (pid));
 
                 try {
-                    var candidate = yield lyrics_fetch_provider (pid, music, duration_ms, settings, pi);
+                    var candidate = yield lyrics_fetch_provider (pid, music, duration_ms, settings, pi, cancellable);
+                    if (cancellable != null && ((!)cancellable).is_cancelled ()) break;
                     if (candidate != null) {
                         var c = (!)candidate;
                         lyrics_log ("%s: %d lines synced=%s, score=%.1f".printf (

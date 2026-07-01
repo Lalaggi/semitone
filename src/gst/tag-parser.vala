@@ -452,7 +452,7 @@ namespace G4 {
             var box_size = read_uint32_be (box_head);
             var box_type = read_uint32_be (box_head, 4);
             if (box_size <= 8) {
-                continue;
+                break;
             } else if (box_type == 0x6d6f6f76) { // moov
                 parse_mp4_box (stream, tags);
             } else if (box_type == 0x75647461) { // udta
@@ -539,6 +539,9 @@ namespace G4 {
         var str = @"giostreamsrc name=src ! $(demux_name) ! fakesink sync=false";
         dynamic Gst.Pipeline? pipeline = Gst.parse_launch (str) as Gst.Pipeline;
         dynamic Gst.Element? src = pipeline?.get_by_name ("src");
+        if (src == null) {
+            throw new UriError.FAILED ("failed to get src element");
+        }
         ((!)src).stream = stream;
 
         if (pipeline?.set_state (Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE) {
@@ -584,6 +587,8 @@ namespace G4 {
             }
         } while (!quit);
         pipeline?.set_state (Gst.State.NULL);
+        if (pipeline != null)
+            ((!)pipeline).unref ();
         return tags;
     }
 

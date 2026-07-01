@@ -93,7 +93,11 @@ namespace G4 {
         public async Gdk.Paintable? load_async (Music music, int size) {
             var is_small = size <= GRID_SIZE;
             if (is_small && !music.replace_qdata<bool, bool> (_loading_quark, false, true, null)) {
-                return null;
+                var cached = find (music, size);
+                if (cached != null) return cached;
+                music.steal_qdata<bool> (_loading_quark);
+                if (!music.replace_qdata<bool, bool> (_loading_quark, false, true, null))
+                    return null;
             }
 
             var pixbuf = yield load_directly_async (music, size);
@@ -187,10 +191,12 @@ namespace G4 {
             var color_index = (text.length == 0 || text == UNKNOWN_ALBUM)
                     ? color_count - 1
                     : str_hash (text) % (color_count - 1);
+            if (_pango_context == null) return "";
             return create_text_svg ((!)_pango_context, text, color_index);
         }
 
         public Gdk.Paintable create_simple_text_paintable (string text, int size, uint color_index = 0x7fffffff) {
+            if (_pango_context == null) return new BasePaintable ();
             var paintable = create_text_paintable ((!)_pango_context, text, size * _scale_factor, size * _scale_factor, color_index);
             return paintable ?? new BasePaintable ();
         }
@@ -222,8 +228,8 @@ namespace G4 {
     public static Gdk.Pixbuf create_clamp_pixbuf (Gdk.Pixbuf pixbuf, int size) {
         var width = pixbuf.width;
         var height = pixbuf.height;
-        if (size > 0 && width > size && height > size) {
-            var scale = width > height ? (size / (double) height) : (size / (double) width);
+        if (size > 0 && (width > size || height > size)) {
+            var scale = (double) size / (width > height ? width : height);
             var dx = (int) (width * scale + 0.5);
             var dy = (int) (height * scale + 0.5);
             var newbuf = pixbuf.scale_simple (dx, dy, Gdk.InterpType.TILES);
@@ -249,7 +255,9 @@ namespace G4 {
         Gst.MapInfo? info = null;
         try {
             if (buffer?.map (out info, Gst.MapFlags.READ) ?? false) {
-                var bytes = new Bytes.static (info?.data);
+                var data = info?.data;
+                if (data == null) return null;
+                var bytes = new Bytes.take (data);
                 var stream = new MemoryInputStream.from_bytes (bytes);
                 return new Gdk.Pixbuf.from_stream_at_scale (stream, size, size, true);
             }

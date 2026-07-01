@@ -34,7 +34,7 @@ namespace G4 {
                                 PORTAL_NAME + "Background", "RequestBackground", parameters,
                                 null, DBusCallFlags.NONE, -1);
             } catch (Error e) {
-                print ("Bus.call error: %s\n", e.message);
+                warning ("Bus.call error: %s", e.message);
             }
         }
 

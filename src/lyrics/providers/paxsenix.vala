@@ -38,6 +38,14 @@ namespace G4 {
         return cleaned.strip ();
     }
 
+    private string regex_replace_or (Regex re, string input, string replacement, string fallback) {
+        try {
+            return re.replace (input, -1, 0, replacement);
+        } catch (RegexError e) {
+            return fallback;
+        }
+    }
+
     private PaxSenixResult[] paxsenix_score (PaxSenixResult[] results,
                                               string title, string artist,
                                               int duration_ms) {
@@ -45,8 +53,9 @@ namespace G4 {
         Regex? cleanup_re = null;
         try { cleanup_re = new Regex (cleanup_re_str); } catch (RegexError e) {}
 
-        var clean_title  = cleanup_re != null ? ((!)cleanup_re).replace (title, -1, 0, "").down ().strip ()
-                                              : title.down ().strip ();
+        var clean_title  = cleanup_re != null
+            ? regex_replace_or ((!)cleanup_re, title, "", title).down ().strip ()
+            : title.down ().strip ();
         var clean_artist = paxsenix_clean_artist (artist).down ();
         bool target_is_remix = title.down ().contains ("remix");
         bool target_is_mixed = title.down ().contains ("mixed");
@@ -65,7 +74,7 @@ namespace G4 {
             }
 
             var result_clean = cleanup_re != null
-                ? ((!)cleanup_re).replace (r.display_name, -1, 0, "").down ().strip ()
+                ? regex_replace_or ((!)cleanup_re, r.display_name, "", r.display_name).down ().strip ()
                 : r.display_name.down ().strip ();
             if (result_clean == clean_title)
                 score += 80.0;
@@ -109,11 +118,11 @@ namespace G4 {
         return filtered;
     }
 
-    private async PaxSenixResult[] paxsenix_search_itunes (string query) {
+    private async PaxSenixResult[] paxsenix_search_itunes (string query, GLib.Cancellable? cancellable = null) {
         var url = "https://itunes.apple.com/search?term=%s&limit=5&entity=song".printf (
             Uri.escape_string (query, null, false));
-        string[,] headers = { { "User-Agent", "Semitone/1.0" } };
-        var body = yield lyrics_http_get (url);
+        var body = yield lyrics_http_get (url, cancellable);
+        if (cancellable != null && ((!)cancellable).is_cancelled ()) return {};
         if (body == null) return {};
 
         PaxSenixResult[] results = {};
@@ -144,11 +153,12 @@ namespace G4 {
         return results;
     }
 
-    private async PaxSenixResult[] paxsenix_search_spotify (string query) {
+    private async PaxSenixResult[] paxsenix_search_spotify (string query, GLib.Cancellable? cancellable = null) {
         var url = "https://lyrics.paxsenix.org/spotify/search?q=%s".printf (
             Uri.escape_string (query, null, false));
         string[,] headers = { { "User-Agent", "Semitone/1.0" } };
-        var body = yield lyrics_http_get_with_headers (url, headers);
+        var body = yield lyrics_http_get_with_headers (url, headers, cancellable);
+        if (cancellable != null && ((!)cancellable).is_cancelled ()) return {};
         if (body == null) return {};
 
         PaxSenixResult[] results = {};
@@ -182,11 +192,12 @@ namespace G4 {
         return results;
     }
 
-    private async string? paxsenix_fetch_track (string id) {
+    private async string? paxsenix_fetch_track (string id, GLib.Cancellable? cancellable = null) {
         var url = "https://lyrics.paxsenix.org/apple-music/lyrics?id=%s".printf (
             Uri.escape_string (id, null, false));
         string[,] headers = { { "User-Agent", "Semitone/1.0" } };
-        var body = yield lyrics_http_get_with_headers (url, headers);
+        var body = yield lyrics_http_get_with_headers (url, headers, cancellable);
+        if (cancellable != null && ((!)cancellable).is_cancelled ()) return null;
         if (body == null) return null;
 
         try {
@@ -247,7 +258,7 @@ namespace G4 {
         }
     }
 
-    public async LyricsCandidate? provider_fetch_paxsenix (Music music, int duration_ms, Settings settings, int index) {
+    public async LyricsCandidate? provider_fetch_paxsenix (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-paxsenix-enabled")) {
             lyrics_log ("PaxSenix: disabled");
             return null;
@@ -270,7 +281,7 @@ namespace G4 {
         foreach (var query in queries) {
             if (scored.length > 0) break;
             lyrics_log ("PaxSenix: searching iTunes '%s'".printf (query));
-            var raw_results = yield paxsenix_search_itunes (query);
+            var raw_results = yield paxsenix_search_itunes (query, cancellable);
             if (raw_results.length > 0)
                 scored = paxsenix_score (raw_results, music.title, music.artist, duration_ms);
         }
@@ -280,7 +291,7 @@ namespace G4 {
             foreach (var query in queries) {
                 if (scored.length > 0) break;
                 lyrics_log ("PaxSenix: searching Spotify '%s'".printf (query));
-                var raw_results = yield paxsenix_search_spotify (query);
+                var raw_results = yield paxsenix_search_spotify (query, cancellable);
                 if (raw_results.length > 0)
                     scored = paxsenix_score (raw_results, music.title, music.artist, duration_ms);
             }
@@ -299,7 +310,7 @@ namespace G4 {
             var r = scored[i];
             lyrics_log ("PaxSenix: trying id=%s '%s' by '%s' (score=%.1f)".printf (
                 r.id, r.display_name, r.display_artist, r.score));
-            var lrc = yield paxsenix_fetch_track (r.id);
+            var lrc = yield paxsenix_fetch_track (r.id, cancellable);
             if (lrc == null) continue;
 
             bool has_word_timing = ((!)lrc).contains ("<tt")

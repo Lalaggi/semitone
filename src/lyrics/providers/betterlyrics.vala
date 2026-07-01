@@ -1,6 +1,6 @@
 namespace G4 {
 
-    public async LyricsCandidate? provider_fetch_betterlyrics (Music music, int duration_ms, Settings settings, int index) {
+    public async LyricsCandidate? provider_fetch_betterlyrics (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-betterlyrics-enabled")) {
             lyrics_log ("BetterLyrics: disabled");
             return null;
@@ -29,7 +29,7 @@ namespace G4 {
         } else {
             lyrics_log ("BetterLyrics: no API key found - create ~/.config/semitone/betterlyrics-api-key to enable");
         }
-        var body = yield lyrics_http_get_with_headers_allow_4xx (url, headers);
+        var body = yield lyrics_http_get_with_headers_allow_4xx (url, headers, cancellable);
         int body_len = body != null ? ((!)body).length : 0;
         int log_len = body_len > 500 ? 500 : body_len;
         lyrics_log ("BetterLyrics response (len=%d): %s".printf (body_len, body != null ? ((!)body).substring (0, log_len) : "null"));

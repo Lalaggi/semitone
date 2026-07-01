@@ -1,6 +1,6 @@
 namespace G4 {
 
-    public async LyricsCandidate? provider_fetch_genius (Music music, int duration_ms, Settings settings, int index) {
+    public async LyricsCandidate? provider_fetch_genius (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-genius-enabled")) {
             lyrics_log ("Genius: disabled");
             return null;
@@ -11,7 +11,7 @@ namespace G4 {
         string[,] scrape_headers = {
             { "User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/115.0" }
         };
-        var page = yield lyrics_http_get_with_headers (scrape_url, scrape_headers);
+        var page = yield lyrics_http_get_with_headers (scrape_url, scrape_headers, cancellable);
         if (page == null) return null;
         try {
             var re = new Regex ("href=\"(https://genius\\.com/[A-Za-z0-9-]+-lyrics)\"");
@@ -19,7 +19,7 @@ namespace G4 {
             if (!re.match ((!)page, 0, out info)) return null;
             string? song_url = info.fetch (1);
             if (song_url == null) return null;
-            var song_page = yield lyrics_http_get_with_headers ((!)song_url, scrape_headers);
+            var song_page = yield lyrics_http_get_with_headers ((!)song_url, scrape_headers, cancellable);
             if (song_page == null) return null;
             var lyrics_re = new Regex (
                 "data-lyrics-container=\"true\"[^>]*>([^<]*(?:<(?!/?div)[^<]*)*)",

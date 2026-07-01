@@ -1,6 +1,6 @@
 namespace G4 {
 
-    public async LyricsCandidate? provider_fetch_musixmatch (Music music, int duration_ms, Settings settings, int index) {
+    public async LyricsCandidate? provider_fetch_musixmatch (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-musixmatch-enabled")) {
             lyrics_log ("Musixmatch: disabled");
             return null;
@@ -16,7 +16,7 @@ namespace G4 {
             Uri.escape_string (music.title, null, false),
             Uri.escape_string (music.artist, null, false),
             Uri.escape_string ((!)mm_key, null, false));
-        var search_body = yield lyrics_http_get (search_url);
+        var search_body = yield lyrics_http_get (search_url, cancellable);
         if (search_body == null) return null;
         try {
             var parser = new Json.Parser ();
@@ -36,7 +36,7 @@ namespace G4 {
             var track_id = ((!)track).get_int_member ("track_id");
             var lyrics_url = "https://api.musixmatch.com/ws/1.1/track.lyrics.get?track_id=%lld&apikey=%s".printf (
                 track_id, Uri.escape_string ((!)mm_key, null, false));
-            var lyrics_body = yield lyrics_http_get (lyrics_url);
+            var lyrics_body = yield lyrics_http_get (lyrics_url, cancellable);
             if (lyrics_body == null) return null;
             var parser2 = new Json.Parser ();
             parser2.load_from_data ((!)lyrics_body);

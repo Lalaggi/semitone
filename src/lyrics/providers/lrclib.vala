@@ -1,6 +1,6 @@
 namespace G4 {
 
-    public async LyricsCandidate? provider_fetch_lrclib (Music music, int duration_ms, Settings settings, int index) {
+    public async LyricsCandidate? provider_fetch_lrclib (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-lrclib-enabled")) {
             lyrics_log ("LRCLib: disabled");
             return null;
@@ -10,7 +10,7 @@ namespace G4 {
             Uri.escape_string (music.title, null, false),
             Uri.escape_string (music.artist, null, false),
             Uri.escape_string (music.album, null, false));
-        var body = yield lyrics_http_get (url);
+        var body = yield lyrics_http_get (url, cancellable);
         if (body == null) return null;
         try {
             var parser = new Json.Parser ();

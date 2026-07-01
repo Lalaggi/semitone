@@ -118,9 +118,6 @@ namespace G4 {
                     snapshot.translate (point);
                 }
                 snapshot.pop ();
-#if GTK_4_10
-                snapshot.pop ();  // Must call again if snapshot.push_mask() ???
-#endif
             } else {
                 base.snapshot (snapshot);
             }

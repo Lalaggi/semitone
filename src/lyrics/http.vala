@@ -8,11 +8,12 @@ namespace G4 {
         return (!)_lyrics_http_session;
     }
 
-    public async string? lyrics_http_get (string url) {
+    public async string? lyrics_http_get (string url, GLib.Cancellable? cancellable = null) {
         try {
             var msg = new Soup.Message ("GET", url);
             msg.request_headers.append ("User-Agent", "Semitone/1.0");
-            var stream = yield lyrics_http_session ().send_async (msg, GLib.Priority.DEFAULT, null);
+            var stream = yield lyrics_http_session ().send_async (msg, GLib.Priority.DEFAULT, cancellable);
+            if (cancellable != null && ((!)cancellable).is_cancelled ()) return null;
             if (msg.status_code != 200) {
                 lyrics_log ("HTTP %u for %s".printf (msg.status_code, url));
                 return null;
@@ -21,7 +22,7 @@ namespace G4 {
             var sb = new StringBuilder ();
             string? line = null;
             do {
-                line = yield dis.read_line_async (GLib.Priority.DEFAULT, null);
+                line = yield dis.read_line_async (GLib.Priority.DEFAULT, cancellable);
                 if (line != null) {
                     sb.append ((!)line);
                     sb.append_c ('\n');
@@ -34,12 +35,13 @@ namespace G4 {
         }
     }
 
-    public async string? lyrics_http_get_with_headers (string url, string[,] headers) {
+    public async string? lyrics_http_get_with_headers (string url, string[,] headers, GLib.Cancellable? cancellable = null) {
         try {
             var msg = new Soup.Message ("GET", url);
             for (var i = 0; i < headers.length[0]; i++)
                 msg.request_headers.append (headers[i, 0], headers[i, 1]);
-            var stream = yield lyrics_http_session ().send_async (msg, GLib.Priority.DEFAULT, null);
+            var stream = yield lyrics_http_session ().send_async (msg, GLib.Priority.DEFAULT, cancellable);
+            if (cancellable != null && ((!)cancellable).is_cancelled ()) return null;
             if (msg.status_code != 200) {
                 lyrics_log ("HTTP %u for %s".printf (msg.status_code, url));
                 return null;
@@ -48,7 +50,7 @@ namespace G4 {
             var sb = new StringBuilder ();
             string? line = null;
             do {
-                line = yield dis.read_line_async (GLib.Priority.DEFAULT, null);
+                line = yield dis.read_line_async (GLib.Priority.DEFAULT, cancellable);
                 if (line != null) {
                     sb.append ((!)line);
                     sb.append_c ('\n');
@@ -61,17 +63,18 @@ namespace G4 {
         }
     }
 
-    public async string? lyrics_http_get_with_headers_allow_4xx (string url, string[,] headers) {
+    public async string? lyrics_http_get_with_headers_allow_4xx (string url, string[,] headers, GLib.Cancellable? cancellable = null) {
         try {
             var msg = new Soup.Message ("GET", url);
             for (var i = 0; i < headers.length[0]; i++)
                 msg.request_headers.append (headers[i, 0], headers[i, 1]);
-            var stream = yield lyrics_http_session ().send_async (msg, GLib.Priority.DEFAULT, null);
+            var stream = yield lyrics_http_session ().send_async (msg, GLib.Priority.DEFAULT, cancellable);
+            if (cancellable != null && ((!)cancellable).is_cancelled ()) return null;
             var dis = new DataInputStream (stream);
             var sb = new StringBuilder ();
             string? line = null;
             do {
-                line = yield dis.read_line_async (GLib.Priority.DEFAULT, null);
+                line = yield dis.read_line_async (GLib.Priority.DEFAULT, cancellable);
                 if (line != null) {
                     sb.append ((!)line);
                     sb.append_c ('\n');

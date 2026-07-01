@@ -243,7 +243,7 @@ namespace G4 {
         }
 
         private void setup_sleep_popover (Gtk.MenuButton btn, Application app) {
-            var timer = app.sleep_timer;
+            var timer = (!)app.sleep_timer;
 
             var popover = new Gtk.Popover ();
             popover.has_arrow = true;

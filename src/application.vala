@@ -127,13 +127,29 @@ namespace RepeatMode {
                 var ret = open_files_async.end (res);
                 if (ret) {
                     _list_modified = saved_modified;
-                    if (load_plist)
+                    if (load_plist) {
                         _loader.library.remove_playlist (plist_file.get_uri ());
+                        snapshot_queue_order ();
+                    }
                 }
                 if (initial) {
                     // 3. Load music folder to build the library
                     load_music_folder_async.begin ((obj, res)
                         => load_music_folder_async.end (res));
+                    // 4. Refresh current track metadata after a short delay.
+                    //    The PlayPanel may have been allocated before the tag cache
+                    //    or queue metadata was fully resolved, so its labels could
+                    //    still show the stub (filename/empty). Re-emit music_changed
+                    //    once more to ensure the UI picks up the correct info.
+                    run_timeout_once (250, () => {
+                        if (_current_music?.has_unknown () == true) {
+                            var cached = _loader.find_cache (_current_music?.uri ?? "");
+                            if (cached != null) {
+                                _current_music = cached;
+                                music_changed (cached);
+                            }
+                        }
+                    });
                 }
             });
         }
@@ -174,6 +190,9 @@ namespace RepeatMode {
             set {
                 if (value >= (int) _current_list.get_n_items ()) {
                     value = Window.get_default ()?.open_next_playable_page () ?? value;
+                }
+                if (value < 0 || value >= (int) _current_list.get_n_items ()) {
+                    return;
                 }
                 current_music = _current_list.get_item (value) as Music;
                 _current_index = value;
@@ -223,9 +242,11 @@ namespace RepeatMode {
         public Gtk.IconPaintable? icon {
             get {
                 if (_icon == null) {
-                    var theme = Gtk.IconTheme.get_for_display (active_window.display);
+                    var win = active_window as Gtk.Window?;
+                    if (win == null) return null;
+                    var theme = Gtk.IconTheme.get_for_display (((!)win).display);
                     _icon = theme.lookup_icon (application_id, null, _cover_size,
-                        active_window.scale_factor, Gtk.TextDirection.NONE, Gtk.IconLookupFlags.FORCE_REGULAR);
+                        ((!)win).scale_factor, Gtk.TextDirection.NONE, Gtk.IconLookupFlags.FORCE_REGULAR);
                 }
                 return _icon;
             }
@@ -331,8 +352,8 @@ namespace RepeatMode {
                 return _thumbnailer;
             }
         }
-        public SleepTimer sleep_timer {
-          get { return (!)_sleep_timer; }
+        public SleepTimer? sleep_timer {
+          get { return _sleep_timer; }
         }
         public async bool add_playlist_to_file_async (Playlist playlist, bool append) {
             var file = File.new_for_uri (playlist.list_uri);
@@ -402,7 +423,7 @@ namespace RepeatMode {
             yield _loader.load_files_async (files, musics, false, false, _sort_mode);
             _store_external_changed = true;
             if (_music_queue.get_n_items () == 0) {
-                _music_queue.splice (0, _music_queue.get_n_items (), (Object[]) musics.data);
+                _music_queue.splice (0, _music_queue.get_n_items (), to_object_array (musics));
                 snapshot_queue_order ();
             } else {
                 on_music_library_changed (0, 1, 1);
@@ -432,7 +453,7 @@ namespace RepeatMode {
         public void play_previous () {
             if (GstPlayer.to_second (_player.position) > 5.0) {
                 _player.seek (GstPlayer.from_second (0));
-            } else {
+            } else if (current_item > 0) {
                 current_item--;
                 _player.play ();
             }
@@ -486,7 +507,7 @@ namespace RepeatMode {
 public void restore_queue_order () {
     if (_queue_original_order.length == 0) return;
     _music_queue.remove_all ();
-    _music_queue.splice (0, 0, (Object[]) _queue_original_order.data);
+    _music_queue.splice (0, 0, to_object_array (_queue_original_order));
 }
         public async bool save_queue_to_file () {
             var count = _music_queue.get_n_items ();
@@ -580,7 +601,7 @@ public void restore_queue_order () {
         private void on_music_found (GenericArray<Music> arr) {
             _store_external_changed = true;
             if (arr.length > 0) {
-                _music_queue.splice (_music_queue.get_n_items (), 0, (Object[]) arr.data);
+                _music_queue.splice (_music_queue.get_n_items (), 0, to_object_array (arr));
             } else {
                 on_music_library_changed (0, 1, 1);
             }

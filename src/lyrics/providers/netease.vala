@@ -1,6 +1,6 @@
 namespace G4 {
 
-    public async LyricsCandidate? provider_fetch_netease (Music music, int duration_ms, Settings settings, int index) {
+    public async LyricsCandidate? provider_fetch_netease (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-netease-enabled")) {
             lyrics_log ("NetEase: disabled");
             return null;
@@ -13,7 +13,7 @@ namespace G4 {
             { "User-Agent", "Mozilla/5.0" },
             { "Referer", "https://music.163.com" }
         };
-        var search_body = yield lyrics_http_get_with_headers (search_url, headers);
+        var search_body = yield lyrics_http_get_with_headers (search_url, headers, cancellable);
         if (search_body == null) return null;
         try {
             var parser = new Json.Parser ();
@@ -28,7 +28,7 @@ namespace G4 {
             var song = ((!)songs).get_object_element (0);
             var id = song.get_int_member ("id");
             var lyric_url = "https://music.163.com/api/song/lyric?id=%lld&lv=1".printf (id);
-            var lyric_body = yield lyrics_http_get_with_headers (lyric_url, headers);
+            var lyric_body = yield lyrics_http_get_with_headers (lyric_url, headers, cancellable);
             if (lyric_body == null) return null;
             var parser2 = new Json.Parser ();
             parser2.load_from_data ((!)lyric_body);

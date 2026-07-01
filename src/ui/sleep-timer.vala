@@ -39,6 +39,8 @@ namespace G4 {
                 Source.remove (_timer_handle);
                 _timer_handle = 0;
             }
+            SignalHandler.disconnect_by_func (_app.player,
+                (void*) on_end_of_stream_for_sleep, this);
             _seconds_remaining = 0;
             state_changed (false);
         }

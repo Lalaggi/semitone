@@ -16,22 +16,24 @@ namespace G4 {
         { "megalobiz",    "Megalobiz",      "Plain text lyrics via Megalobiz (scraping)"          },
         { "genius",       "Genius",         "Plain text lyrics via Genius (scraping)"             },
         { "musixmatch",   "Musixmatch",     "Plain text lyrics (requires API key)"                },
+        { "musicbrainz",  "MusicBrainz",    "Instrumental detection via MusicBrainz tags"         },
     };
 
     public const string DEFAULT_PROVIDER_ORDER =
-        "betterlyrics,simpmusic,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch";
+        "betterlyrics,simpmusic,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch,musicbrainz";
 
-    public async LyricsCandidate? lyrics_fetch_provider (string id, Music music, int duration_ms, Settings settings, int index) {
+    public async LyricsCandidate? lyrics_fetch_provider (string id, Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         switch (id) {
-            case "paxsenix":    return yield provider_fetch_paxsenix (music, duration_ms, settings, index);
-            case "betterlyrics": return yield provider_fetch_betterlyrics (music, duration_ms, settings, index);
-            case "simpmusic":    return yield provider_fetch_simpmusic (music, duration_ms, settings, index);
-            case "lyricsplus":   return yield provider_fetch_lyricsplus (music, duration_ms, settings, index);
-            case "lrclib":       return yield provider_fetch_lrclib (music, duration_ms, settings, index);
-            case "netease":      return yield provider_fetch_netease (music, duration_ms, settings, index);
-            case "megalobiz":    return yield provider_fetch_megalobiz (music, duration_ms, settings, index);
-            case "genius":       return yield provider_fetch_genius (music, duration_ms, settings, index);
-            case "musixmatch":   return yield provider_fetch_musixmatch (music, duration_ms, settings, index);
+            case "paxsenix":    return yield provider_fetch_paxsenix (music, duration_ms, settings, index, cancellable);
+            case "betterlyrics": return yield provider_fetch_betterlyrics (music, duration_ms, settings, index, cancellable);
+            case "simpmusic":    return yield provider_fetch_simpmusic (music, duration_ms, settings, index, cancellable);
+            case "lyricsplus":   return yield provider_fetch_lyricsplus (music, duration_ms, settings, index, cancellable);
+            case "lrclib":       return yield provider_fetch_lrclib (music, duration_ms, settings, index, cancellable);
+            case "netease":      return yield provider_fetch_netease (music, duration_ms, settings, index, cancellable);
+            case "megalobiz":    return yield provider_fetch_megalobiz (music, duration_ms, settings, index, cancellable);
+            case "genius":       return yield provider_fetch_genius (music, duration_ms, settings, index, cancellable);
+            case "musixmatch":   return yield provider_fetch_musixmatch (music, duration_ms, settings, index, cancellable);
+            case "musicbrainz":  return yield provider_fetch_musicbrainz (music, duration_ms, settings, index, cancellable);
             default: return null;
         }
     }

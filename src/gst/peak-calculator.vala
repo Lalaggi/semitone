@@ -29,7 +29,7 @@ namespace G4 {
             }
             while (_peaks.length > 0) {
                 unowned var p = (!)_peaks.peek_head ();
-                if (p.time >= position) {
+                if (p.time <= position) {
                     peak_value = p.peak;
                     _peaks.pop_head ();
                 } else {
@@ -154,6 +154,11 @@ namespace G4 {
             uint8* p = (uint8*)&value + (4 - value_size);
             for (uint j = 0; j < value_size; j++) {
                 p[j] = data[j];
+            }
+            if (value_size < 4 && (p[value_size - 1] & 0x80) != 0) {
+                for (uint j = value_size; j < 4; j++) {
+                    p[j] = 0xFF;
+                }
             }
             data += block_size;
             value = value >= 0 ? value : -value;

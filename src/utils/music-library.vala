@@ -295,6 +295,7 @@ namespace G4 {
             unowned string key;
             unowned var album_key = music.album_key;
             Album album;
+            Artist artist;
             lock (_albums) {
                 if (!_albums.lookup_extended (album_key, out key, out album)) {
                     album = new Album (music);
@@ -305,7 +306,6 @@ namespace G4 {
             var added = album.add_music (music);
 
             unowned var artist_name = music.artist_name;
-            Artist artist;
             lock (_artists) {
                 if (!_artists.lookup_extended (artist_name, out key, out artist)) {
                     artist = new Artist (music, artist_name);
@@ -467,13 +467,20 @@ namespace G4 {
         return -1;
     }
 
+    public Object[] to_object_array (GenericArray<Music> arr) {
+        Object[] result = new Object[arr.length];
+        for (var i = 0; i < arr.length; i++)
+            result[i] = arr[i];
+        return result;
+    }
+
     public bool merge_items_to_store (ListStore store, GenericArray<Music> arr, ref uint position) {
         var first_pos = -1;
         var removed = remove_items_from_store (store, arr, out first_pos);
-        if (position >= first_pos + removed)
+        if (first_pos >= 0 && position >= first_pos + removed)
             position -= removed;
         position = uint.min (position, store.get_n_items ());
-        store.splice (position, 0, (Object[]) arr.data);
+        store.splice (position, 0, to_object_array (arr));
         return !(arr.length == 1 && arr[0] == store.get_item (first_pos));
     }
 
@@ -504,7 +511,7 @@ namespace G4 {
                         first_removed = i;
                 }
             }
-            store.splice (0, size, (Object[]) remain.data);
+            store.splice (0, size, to_object_array (remain));
         }
         first_pos = first_removed;
         return removed;
@@ -539,7 +546,7 @@ namespace G4 {
             arr.add ((Music) store.get_item (pos));
         }
         sort_music_array (arr, sort_mode);
-        store.splice (0, count, (Object[]) arr.data);
+        store.splice (0, count, to_object_array (arr));
     }
 
     public Playlist to_playlist (Music[] musics, string? title = null) {

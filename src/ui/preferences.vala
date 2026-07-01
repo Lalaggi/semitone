@@ -42,6 +42,8 @@ namespace G4 {
         [GtkChild]
         unowned Gtk.Switch lyrics_plain_fallback_btn;
         [GtkChild]
+        unowned Gtk.SpinButton lyrics_autoscroll_timeout_btn;
+        [GtkChild]
         unowned Adw.ActionRow lyrics_auto_indicator;
         [GtkChild]
         unowned Adw.PreferencesGroup lyrics_providers_group;
@@ -88,6 +90,11 @@ namespace G4 {
             _settings.bind ("lyrics-prefer-synced", lyrics_prefer_synced_btn, "active", SettingsBindFlags.DEFAULT);
             _settings.bind ("lyrics-auto-select", lyrics_auto_select_btn, "active", SettingsBindFlags.DEFAULT);
             _settings.bind ("lyrics-plain-fallback", lyrics_plain_fallback_btn, "active", SettingsBindFlags.DEFAULT);
+
+            lyrics_autoscroll_timeout_btn.set_value (_settings.get_int ("lyrics-autoscroll-timeout"));
+            lyrics_autoscroll_timeout_btn.value_changed.connect (() => {
+                _settings.set_int ("lyrics-autoscroll-timeout", (int) lyrics_autoscroll_timeout_btn.get_value ());
+            });
 
             lyrics_auto_select_btn.notify["active"].connect (() => {
                 update_auto_indicator ();
@@ -149,7 +156,7 @@ namespace G4 {
             var row = new Adw.ActionRow ();
             row.title = info.display_name;
             row.subtitle = info.subtitle;
-            row.icon_name = "audio-x-generic-symbolic";
+            row.add_prefix (new Gtk.Image.from_icon_name ("audio-x-generic-symbolic"));
 
             var up_btn = new Gtk.Button.from_icon_name ("go-up-symbolic");
             up_btn.valign = Gtk.Align.CENTER;
@@ -197,7 +204,7 @@ namespace G4 {
                 var sink_name = app.player.audio_sink;
                 for (int i = 0; i < _audio_sinks.length; i++)
                     if (sink_name == _audio_sinks[i].name) return i;
-                return _audio_sinks.length > 0 ? 0 : -1;
+                return 0;
             }
             set {
                 if (value < _audio_sinks.length) {

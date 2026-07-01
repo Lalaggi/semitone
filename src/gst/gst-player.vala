@@ -125,7 +125,7 @@ namespace G4 {
                 var sink = Gst.ElementFactory.make (sink_name, sink_name);
                 if (sink != null) {
                     _audio_sink = sink;
-                    _audio_sink_name = value;
+                    _audio_sink_name = sink_name;
                     ((!)_audio_sink).enable_last_sample = true;
                 }
                 if (_pipeline != null && _current_uri != null)
@@ -199,7 +199,10 @@ namespace G4 {
         }
 
         public void seek (Gst.ClockTime position) {
-            if (_pipeline != null && !_seeking) {
+            if (_pipeline != null) {
+                if (_seeking) {
+                    _seeking = false;
+                }
                 _seeking = ((!)_pipeline).seek_simple (Gst.Format.TIME, Gst.SeekFlags.ACCURATE | Gst.SeekFlags.FLUSH, (int64) position);
             }
         }
@@ -242,7 +245,7 @@ namespace G4 {
                     break;
 
                 case Gst.MessageType.STATE_CHANGED:
-                    if (message.src == (!)_pipeline) {
+                    if (_pipeline != null && message.src == (!)_pipeline) {
                         Gst.State old = Gst.State.NULL, state = Gst.State.NULL, pend = Gst.State.NULL;
                         message.parse_state_changed (out old, out state, out pend);
                         on_state_changed (old, state);
@@ -308,7 +311,7 @@ namespace G4 {
         }
 
         private void parse_duration () {
-            if (((!)_pipeline).query_duration (Gst.Format.TIME, out _duration)) {
+            if (_pipeline != null && ((!)_pipeline).query_duration (Gst.Format.TIME, out _duration)) {
                 duration_changed (_duration);
             } else {
                 _duration = Gst.CLOCK_TIME_NONE;
@@ -316,7 +319,7 @@ namespace G4 {
         }
 
         private bool parse_position () {
-            if (((!)_pipeline).query_position (Gst.Format.TIME, out _position)) {
+            if (_pipeline != null && ((!)_pipeline).query_position (Gst.Format.TIME, out _position)) {
                 position_updated (_position);
             } else {
                 _position = Gst.CLOCK_TIME_NONE;

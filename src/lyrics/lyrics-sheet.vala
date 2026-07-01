@@ -19,6 +19,11 @@ namespace G4 {
         private LyricsEngine _engine;
         private bool _loading_in_progress = false;
         private bool _is_instrumental = false;
+        private GLib.Cancellable? _load_cancellable;
+        private int _load_gen = 0;
+        private bool _user_scrolling = false;
+        private uint _auto_scroll_timeout = 0;
+        private bool _programmatic_scroll = false;
 
         public LyricsSheet (Application app) {
             _app = app;
@@ -68,6 +73,7 @@ namespace G4 {
             _scroll.valign = Gtk.Align.FILL;
             _scroll.hscrollbar_policy = Gtk.PolicyType.NEVER;
             _scroll.vscrollbar_policy = Gtk.PolicyType.AUTOMATIC;
+            _scroll.vadjustment.value_changed.connect (on_scroll_value_changed);
             _box.append (_scroll);
 
             // ── Bottom bar ───────────────────────────────────────────
@@ -82,6 +88,7 @@ namespace G4 {
             refresh_btn.add_css_class ("flat");
             refresh_btn.clicked.connect (() => {
                 lyrics_log ("Manual refresh requested, clearing cache");
+                cancel_current_load ();
                 lyrics_clear_cache (_current_uri);
                 load_lyrics.begin ();
             });
@@ -137,6 +144,7 @@ namespace G4 {
                     if (_resize_timeout == 0) {
                         _resize_timeout = GLib.Timeout.add (100, on_resize_timeout);
                     }
+                    cancel_auto_scroll_timeout ();
                     _app.player.position_updated.connect (on_position_updated);
                     load_lyrics.begin ();
                 } else {
@@ -144,11 +152,15 @@ namespace G4 {
                         GLib.Source.remove (_resize_timeout);
                         _resize_timeout = 0;
                     }
+                    cancel_auto_scroll_timeout ();
                     _app.player.position_updated.disconnect (on_position_updated);
+                    cancel_current_load ();
                 }
             });
 
             app.music_changed.connect ((music) => {
+                cancel_current_load ();
+                cancel_auto_scroll_timeout ();
                 _active_indices = {};
                 _offset_ms = 0;
                 update_offset_label ();
@@ -184,10 +196,41 @@ namespace G4 {
         // ── Offset ───────────────────────────────────────────────────
 
         private void update_offset_label () {
-            _offset_label.label = "%lldms".printf (_offset_ms);
+            _offset_label.label = "%ldms".printf ((long) _offset_ms);
         }
 
         // ── Position tracking ────────────────────────────────────────
+
+        private void on_scroll_value_changed () {
+            if (_programmatic_scroll) return;
+            _user_scrolling = true;
+            reset_auto_scroll_timeout ();
+        }
+
+        private void reset_auto_scroll_timeout () {
+            if (_auto_scroll_timeout != 0) {
+                GLib.Source.remove (_auto_scroll_timeout);
+            }
+            var timeout_ms = _app.settings.get_int ("lyrics-autoscroll-timeout");
+            if (timeout_ms <= 0) {
+                _user_scrolling = false;
+                _auto_scroll_timeout = 0;
+                return;
+            }
+            _auto_scroll_timeout = GLib.Timeout.add (timeout_ms, () => {
+                _user_scrolling = false;
+                _auto_scroll_timeout = 0;
+                return false;
+            });
+        }
+
+        private void cancel_auto_scroll_timeout () {
+            if (_auto_scroll_timeout != 0) {
+                GLib.Source.remove (_auto_scroll_timeout);
+                _auto_scroll_timeout = 0;
+            }
+            _user_scrolling = false;
+        }
 
         private void on_position_updated (Gst.ClockTime position) {
             if (!_is_synced) return;
@@ -277,17 +320,22 @@ namespace G4 {
                 child = next;
             }
 
-            if (new_active.length > 0) {
+            if (new_active.length > 0 && !_user_scrolling) {
                 var first_active = new_active[0];
                 var active_row = _list_box.get_row_at_index (first_active);
                 if (active_row != null) {
                     Idle.add (() => {
                         var r = (!)active_row;
-                        var alloc = Gtk.Allocation ();
-                        r.get_allocation (out alloc);
+                        var bounds = Graphene.Rect ();
+                        r.compute_bounds (_scroll, out bounds);
                         var adj = _scroll.vadjustment;
-                        var target = alloc.y - (adj.page_size / 2.0) + (alloc.height / 2.0);
+                        // compute_bounds returns coordinates relative to the visible
+                        // area, so add the current scroll offset to get content coords
+                        _programmatic_scroll = true;
+                        var target = bounds.get_y () + adj.get_value ()
+                            + (bounds.get_height () / 2.0) - (adj.page_size / 2.0);
                         adj.set_value (target.clamp (adj.lower, adj.upper - adj.page_size));
+                        _programmatic_scroll = false;
                         return false;
                     });
                 }
@@ -470,14 +518,28 @@ namespace G4 {
             dialog.present (win);
         }
 
+        // ── Cancellation ─────────────────────────────────────────────
+
+        private void cancel_current_load () {
+            _load_gen++;
+            _loading_in_progress = false;
+            if (_load_cancellable != null) {
+                lyrics_log ("Cancelling current lyrics load");
+                ((!)_load_cancellable).cancel ();
+                _load_cancellable = null;
+            }
+        }
+
         // ── Main load ────────────────────────────────────────────────
 
         private async void load_lyrics () {
+            var gen = _load_gen;
             if (_loading_in_progress) {
-                lyrics_log ("load_lyrics: already in progress, skipping");
+                lyrics_log ("load_lyrics[%d]: already in progress, skipping".printf (gen));
                 return;
             }
             _loading_in_progress = true;
+            _load_cancellable = new GLib.Cancellable ();
             _lines = {};
             _is_synced = false;
             _active_indices = {};
@@ -490,18 +552,19 @@ namespace G4 {
 
             var music = _app.current_music;
             if (music == null) {
-                lyrics_log ("No current music, aborting");
+                lyrics_log ("load_lyrics[%d]: No current music, aborting".printf (gen));
                 _loading_in_progress = false;
+                _load_cancellable = null;
                 show_not_found ();
                 return;
             }
             var m = (!)music;
             _current_uri = m.uri;
 
-            lyrics_log ("Loading lyrics for: '%s' by '%s' (album: '%s')".printf (
-                m.title, m.artist, m.album));
+            lyrics_log ("load_lyrics[%d]: Loading lyrics for: '%s' by '%s' (album: '%s')".printf (
+                gen, m.title, m.artist, m.album));
 
-            lyrics_log ("Checking cache...");
+            lyrics_log ("load_lyrics[%d]: Checking cache...".printf (gen));
             string cached_raw, cached_provider;
             int64 cached_offset;
             if (lyrics_load_cache (_current_uri, out cached_raw, out cached_provider, out cached_offset)) {
@@ -511,11 +574,12 @@ namespace G4 {
                 set_provider (cached_provider + " (cached)");
 
                 if (cached_provider == "instrumental" || cached_raw == "[instrumental]") {
-                    lyrics_log ("Cache: track is marked as instrumental");
+                    lyrics_log ("load_lyrics[%d]: Cache: track is marked as instrumental".printf (gen));
                     _is_instrumental = true;
                     _lines = {};
                     show_instrumental ();
                     _loading_in_progress = false;
+                    _load_cancellable = null;
                     return;
                 }
 
@@ -524,8 +588,9 @@ namespace G4 {
                 _lines = parse (cached_raw, format);
 
                 if (_lines.length > 0) {
-                    lyrics_log ("Loaded from cache, %d lines".printf (_lines.length));
+                    lyrics_log ("load_lyrics[%d]: Loaded from cache, %d lines".printf (gen, _lines.length));
                     _loading_in_progress = false;
+                    _load_cancellable = null;
                     populate_list ();
                     return;
                 }
@@ -535,19 +600,27 @@ namespace G4 {
 
             ulong handler_id = 0;
             handler_id = _engine.candidate_available.connect ((c) => {
-                apply_candidate (c);
+                apply_candidate (gen, c);
             });
 
-            var best = yield _engine.load_lyrics (m, settings);
+            var best = yield _engine.load_lyrics (m, settings, _load_cancellable);
 
             _engine.disconnect (handler_id);
+
+            if (gen != _load_gen) {
+                lyrics_log ("load_lyrics[%d]: Stale result, current gen is %d, discarding".printf (gen, _load_gen));
+                _load_cancellable = null;
+                return;
+            }
+
             _loading_in_progress = false;
+            _load_cancellable = null;
 
             if (best == null) {
-                lyrics_log ("All providers failed or returned nothing");
+                lyrics_log ("load_lyrics[%d]: All providers failed or returned nothing".printf (gen));
                 set_provider ("");
                 if (_is_instrumental) {
-                    lyrics_log ("Track is instrumental, caching and showing");
+                    lyrics_log ("load_lyrics[%d]: Track is instrumental, caching and showing".printf (gen));
                     _current_raw = "[instrumental]";
                     lyrics_save_cache (_current_uri, _current_raw, "instrumental", 0);
                     show_instrumental ();
@@ -557,12 +630,26 @@ namespace G4 {
                 return;
             }
 
-            apply_candidate ((!)best);
+            apply_candidate (gen, (!)best);
         }
 
-        private void apply_candidate (LyricsCandidate c) {
-            lyrics_log ("Applying candidate: %s (score=%.1f, %d lines, synced=%s)".printf (
-                c.provider, c.score, c.lines.length, c.is_synced.to_string ()));
+        private void apply_candidate (int gen, LyricsCandidate c) {
+            lyrics_log ("apply_candidate[%d]: Applying candidate: %s (score=%.1f, %d lines, synced=%s)".printf (
+                gen, c.provider, c.score, c.lines.length, c.is_synced.to_string ()));
+            if (gen != _load_gen) {
+                lyrics_log ("apply_candidate[%d]: Stale result for song %d, skipping".printf (gen, _load_gen));
+                return;
+            }
+            if (c.lines.length == 0 && c.raw == "[instrumental]") {
+                _is_instrumental = true;
+                _current_raw = "[instrumental]";
+                _lines = {};
+                _is_synced = false;
+                set_provider (c.provider);
+                lyrics_save_cache (_current_uri, _current_raw, c.provider, 0);
+                show_instrumental ();
+                return;
+            }
             if (c.is_synced) {
                 _current_raw = serialize_to_lrc_plus (c.lines);
             } else {

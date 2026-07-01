@@ -53,9 +53,22 @@ namespace G4 {
                 if (ls.has_prefix ("[") && ls.contains ("]")) {
                     var bracket_close = ls.index_of_char (']');
                     var after_bracket = ls.substring (bracket_close + 1).strip ();
-                    if (after_bracket.has_prefix ("<") && after_bracket.contains (":") && after_bracket.contains (">")) {
-                        has_inline_timing = true;
-                        break;
+                    // Check for inline timestamps, possibly preceded by a voice
+                    // prefix like "v1:" — e.g. [00:16.83]v1:<00:16.834>text
+                    if (after_bracket.has_prefix ("<")) {
+                        if (after_bracket.contains (":") && after_bracket.contains (">")) {
+                            has_inline_timing = true;
+                            break;
+                        }
+                    } else {
+                        var lt_pos = after_bracket.index_of_char ('<');
+                        if (lt_pos > 0 && lt_pos < 4) {
+                            var inline = after_bracket.substring (lt_pos);
+                            if (inline.contains (":") && inline.contains (">")) {
+                                has_inline_timing = true;
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -240,8 +253,18 @@ namespace G4 {
 
             var rest = line.substring (close + 1);
             var first_tag = rest.index_of_char ('<');
-            if (first_tag > 0)
-                rest = rest.substring (first_tag);
+
+            // Extract voice role from prefix like "v1:" before the first inline tag
+            var voice_role = "";
+            if (first_tag > 0) {
+                var prefix = rest.substring (0, first_tag).strip ();
+                if (prefix.has_suffix (":")) {
+                    voice_role = prefix.substring (0, prefix.length - 1);
+                    rest = rest.substring (first_tag);
+                } else {
+                    rest = rest.substring (first_tag);
+                }
+            }
 
             LyricWord[] words = {};
             var text_sb = new StringBuilder ();
@@ -281,7 +304,7 @@ namespace G4 {
             if (words.length > 0)
                 words[words.length - 1].end_sec = line_end_sec;
 
-            LyricLine l = { line_ms, text_sb.str.strip (), words, "" };
+            LyricLine l = { line_ms, text_sb.str.strip (), words, voice_role };
             result += l;
         }
         return result;
@@ -385,16 +408,19 @@ namespace G4 {
             }
         }
 
+        LyricLine[] ttml_result;
         if (has_word_timing) {
-            return parse_ttml_word_synced (body);
+            ttml_result = parse_ttml_word_synced (body);
         } else if (has_line_timing) {
-            return parse_ttml_line_synced (body);
+            ttml_result = parse_ttml_line_synced (body);
         } else {
-            return parse_ttml_unsynced (body);
+            ttml_result = parse_ttml_unsynced (body);
         }
+        delete doc;
+        return ttml_result;
     }
 
-    private LyricLine[] parse_ttml_unsynced (unowned Xml.Node* body) {
+    private LyricLine[] parse_ttml_unsynced (Xml.Node* body) {
         LyricLine[] result = {};
         for (var div = body->children; div != null; div = div->next) {
             if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
@@ -412,7 +438,7 @@ namespace G4 {
         return result;
     }
 
-    private LyricLine[] parse_ttml_line_synced (unowned Xml.Node* body) {
+    private LyricLine[] parse_ttml_line_synced (Xml.Node* body) {
         LyricLine[] result = {};
         for (var div = body->children; div != null; div = div->next) {
             if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
@@ -499,7 +525,7 @@ namespace G4 {
         return result;
     }
 
-    private LyricLine[] parse_ttml_word_synced (unowned Xml.Node* body) {
+    private LyricLine[] parse_ttml_word_synced (Xml.Node* body) {
         LyricLine[] result = {};
         for (var div = body->children; div != null; div = div->next) {
             if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
@@ -615,7 +641,11 @@ namespace G4 {
         var frac_val = int.parse (frac);
         if (frac.length == 3)
             return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val);
-        return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val * 10);
+        if (frac.length == 2)
+            return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val * 10);
+        if (frac.length == 1)
+            return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val * 100);
+        return -1;
     }
 
     public int64 ttml_time_to_ms (string t) {

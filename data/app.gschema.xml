@@ -142,6 +142,10 @@
       <default>false</default>
       <summary>Enable Musixmatch provider (requires API key)</summary>
     </key>
+    <key name="lyrics-musicbrainz-enabled" type="b">
+      <default>true</default>
+      <summary>Enable MusicBrainz instrumental detection</summary>
+    </key>
     <key name="lyrics-prefer-synced" type="b">
       <default>true</default>
       <summary>Always try synced providers first</summary>
@@ -153,6 +157,11 @@
     <key name="lyrics-plain-fallback" type="b">
       <default>true</default>
       <summary>Fall back to plain text if no synced lyrics found</summary>
+    </key>
+    <key name="lyrics-autoscroll-timeout" type="i">
+      <range min="0" max="30000"/>
+      <default>8000</default>
+      <summary>Auto-scroll resume delay in milliseconds after user scroll</summary>
     </key>
     <key name="lyrics-provider-order" type="s">
       <default>'betterlyrics,simpmusic,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch'</default>

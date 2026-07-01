@@ -128,7 +128,6 @@ ape_demux_parse_tags (const guint8 * data, gint size)
       n++;
     if (n == size)
       break;
-    g_assert (data[n] == 0x0);
     n++;
     if (size - n < len)
       break;

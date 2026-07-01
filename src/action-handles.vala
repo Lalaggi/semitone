@@ -206,7 +206,7 @@ namespace G4 {
         private void show_tags (SimpleAction action, Variant? parameter) {
             var uri = parameter?.get_string () ?? _app.current_music?.uri;
             if (uri != null) {
-                var tags = strcmp (_app.current_music?.uri, uri) == 0 ? _app.player.tag_list : (Gst.TagList?) null;
+                var tags = (_app.current_music?.uri ?? "") == uri ? _app.player.tag_list : (Gst.TagList?) null;
                 var dialog = new TagListDialog ((!)uri, tags);
                 dialog.present (Window.get_default ());
             }
@@ -215,7 +215,11 @@ namespace G4 {
         private PreferencesWindow? _pref_window = null;
 
         private void show_preferences () {
-            var win = _pref_window ?? new PreferencesWindow (_app);
+            if (_pref_window != null) {
+                ((!)_pref_window).present ();
+                return;
+            }
+            var win = new PreferencesWindow (_app);
             _pref_window = win;
             win.destroy_with_parent = true;
             win.modal = false;

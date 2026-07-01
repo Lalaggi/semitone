@@ -1,6 +1,6 @@
 namespace G4 {
 
-    public async LyricsCandidate? provider_fetch_lyricsplus (Music music, int duration_ms, Settings settings, int index) {
+    public async LyricsCandidate? provider_fetch_lyricsplus (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-lyricsplus-enabled")) {
             lyrics_log ("LyricsPlus: disabled");
             return null;
@@ -23,7 +23,7 @@ namespace G4 {
             }
             for (var attempt = 0; attempt < 3; attempt++) {
                 lyrics_log ("LyricsPlus: trying %s (attempt %d)".printf (base_url, attempt + 1));
-                var body = yield lyrics_http_get_with_headers_allow_4xx (url, { { "User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" } });
+                var body = yield lyrics_http_get_with_headers_allow_4xx (url, { { "User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" } }, cancellable);
                 if (body == null) break;
                 var raw = (!)body;
                 if (raw.contains ("error code: 1027")) {

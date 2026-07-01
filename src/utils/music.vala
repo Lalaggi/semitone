@@ -392,12 +392,13 @@ namespace G4 {
         var name = file.get_basename () ?? "";
         if (name.length == 0 || name == "/")
             name = file.get_parse_name ();
-        return name.substring (0, name.index_of_char ('.'));
+        var dot = name.index_of_char ('.');
+        return dot > 0 ? name.substring (0, dot) : name;
     }
 
     public string get_uri_with_end_sep (File file) {
         var uri = file.get_uri ();
-        if (uri[uri.length - 1] != '/')
+        if (uri.length == 0 || uri[uri.length - 1] != '/')
             uri += "/";
         return uri;
     }

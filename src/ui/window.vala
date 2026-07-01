@@ -210,9 +210,9 @@ namespace G4 {
 
             _loading = loading;
             if (loading) {
-                run_timeout_once (100, () => _progress_bar.visible = _loading);
+                run_timeout_once (100, () => { if (_loading) _progress_bar.visible = true; });
             } else {
-                _progress_bar.visible = _loading;
+                _progress_bar.visible = false;
             }
 
             if (loading && _tick_handler == 0) {

@@ -519,6 +519,8 @@ namespace G4 {
 
         private Gdk.DragAction on_drop_motion (double x, double y) {
             _columns = get_grid_view_item_size (_grid_view, ref _item_size, ref _cell_size);
+            if (_cell_size.width <= 0 || _cell_size.height <= 0)
+                return Gdk.DragAction.COPY;
             var col = (int) (x / _cell_size.width);
             var row = (int) ((y + _scroll_view.vadjustment.value) / _cell_size.height);
             var index = (int) _columns * row + col;

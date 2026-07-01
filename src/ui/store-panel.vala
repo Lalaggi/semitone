@@ -714,6 +714,7 @@ namespace G4 {
                 var store = _app.music_queue;
                 store.remove_all ();
                 store.splice (0, 0, (Object[]) playlist.items.data);
+                _app.list_modified = true;
                 _app.snapshot_queue_order ();
                 _app.queue_shuffled = shuffle;
                 if (shuffle) {

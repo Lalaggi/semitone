@@ -236,6 +236,30 @@
                 </child>
               </object>
             </child>
+            <child>
+              <object class="AdwActionRow">
+                <property name="icon-name">media-seek-forward-symbolic</property>
+                <property name="title" translatable="yes">Auto-scroll resume delay</property>
+                <property name="subtitle" translatable="yes">Milliseconds before auto-scroll resumes after manual scroll (0 to disable)</property>
+                <child>
+                  <object class="GtkSpinButton" id="lyrics_autoscroll_timeout_btn">
+                    <property name="valign">center</property>
+                    <property name="adjustment">
+                      <object class="GtkAdjustment">
+                        <property name="lower">0</property>
+                        <property name="upper">30000</property>
+                        <property name="step-increment">1000</property>
+                        <property name="page-increment">5000</property>
+                        <property name="value">8000</property>
+                      </object>
+                    </property>
+                    <property name="digits">0</property>
+                    <property name="update-policy">if-valid</property>
+                    <property name="width-chars">6</property>
+                  </object>
+                </child>
+              </object>
+            </child>
           </object>
         </child>
         <child>

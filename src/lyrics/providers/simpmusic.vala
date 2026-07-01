@@ -169,7 +169,7 @@ namespace G4 {
         return extract_youtube_id_from_text (comment, out dummy);
     }
 
-    public async LyricsCandidate? provider_fetch_simpmusic (Music music, int duration_ms, Settings settings, int index) {
+    public async LyricsCandidate? provider_fetch_simpmusic (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-simpmusic-enabled")) {
             lyrics_log ("SimpMusic: disabled");
             return null;
@@ -190,7 +190,7 @@ namespace G4 {
 
         var url = "https://api-lyrics.simpmusic.org/v1/%s".printf (
             Uri.escape_string ((!)yt_id, null, false));
-        var body = yield lyrics_http_get (url);
+        var body = yield lyrics_http_get (url, cancellable);
         if (body == null) return null;
         try {
             var parser = new Json.Parser ();

@@ -44,7 +44,7 @@ namespace G4 {
                 } catch (Error e) {
                     if (_conn != null) { try { ((!)_conn).close (); } catch {} _conn = null; }
                 }
-                GLib.Thread.usleep (100000);
+                yield delay_ms (100);
             }
             if (!_connected) schedule_reconnect ();
         }
@@ -128,12 +128,10 @@ namespace G4 {
             } else {
                 start_ms = (int64) (GLib.get_real_time () / 1000);
             }
-            if (start_ms < 0 || start_ms > (int64) 86400000) start_ms = (int64) (GLib.get_real_time () / 1000);
-            
-            var timestamps = "{\"start\":%lld}".printf (start_ms);
+            var timestamps = "{\"start\":%ld}".printf ((long) start_ms);
             var assets = "{\"large_image\":\"semitone\",\"large_text\":\"Semitone Music Player\"}";
 
-            GLib.message ("[DiscordRPC] start_ms=%lld, playing=%s".printf (start_ms, _playing.to_string ()));
+            GLib.message ("[DiscordRPC] start_ms=%ld, playing=%s".printf ((long) start_ms, _playing.to_string ()));
 
             var activity = "{\"application_id\":\"%s\",\"type\":2,\"name\":\"Semitone\",\"details\":%s,\"state\":%s,\"timestamps\":%s,\"assets\":%s}".printf (
                 CLIENT_ID,
@@ -142,13 +140,13 @@ namespace G4 {
                 timestamps,
                 assets);
 
-            var payload = "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":%d,\"activity\":%s},\"nonce\":\"%lld\"}".printf (
-                (int) Posix.getpid (), activity, start_ms / 1000);
+            var payload = "{\"cmd\":\"SET_ACTIVITY\",\"args\":{\"pid\":%d,\"activity\":%s},\"nonce\":\"%ld\"}".printf (
+                (int) Posix.getpid (), activity, (long) (start_ms / 1000));
 
-            GLib.message ("[DiscordRPC] Sending presence: %s — %s (pos=%lldms)".printf (_current_title, _current_artist, _current_position_ms));
+            GLib.message ("[DiscordRPC] Sending presence: %s — %s (pos=%ldms)".printf (_current_title, _current_artist, (long) _current_position_ms));
             yield send_frame (1, payload);
             
-            GLib.Thread.usleep (300000);
+            yield delay_ms (300);
             var response = yield read_frame ();
             if (response != null) {
                 GLib.message ("[DiscordRPC] Response: %s".printf ((!)response));
@@ -157,6 +155,14 @@ namespace G4 {
 
         private string json_escape (string s) {
             return "\"" + s.replace ("\\", "\\\\").replace ("\"", "\\\"").replace ("\n", "\\n").replace ("\r", "\\r") + "\"";
+        }
+
+        private async void delay_ms (uint ms) {
+            GLib.Timeout.add (ms, () => {
+                delay_ms.callback ();
+                return false;
+            });
+            yield;
         }
 
         private int64 _song_start_time_ms = 0;
@@ -180,10 +186,10 @@ namespace G4 {
             
             if (_current_title.length == 0) return;
             
-            if (_playing && !was_playing) {
+            if (_playing && !was_playing && _current_position_ms > 0) {
                 _song_start_time_ms = (int64) (GLib.get_real_time () / 1000) - _current_position_ms;
-                GLib.message ("[DiscordRPC] Unpause: set start_time to %lld (pos=%lldms)".printf (
-                    _song_start_time_ms, _current_position_ms));
+                GLib.message ("[DiscordRPC] Unpause: set start_time to %ld (pos=%ldms)".printf (
+                    (long) _song_start_time_ms, (long) _current_position_ms));
             }
             
             if (_playing && _connected) {
