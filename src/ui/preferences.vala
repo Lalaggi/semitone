@@ -28,6 +28,10 @@ namespace G4 {
         [GtkChild]
         unowned Gtk.Switch rotate_btn;
         [GtkChild]
+        unowned Gtk.Button css_file_btn;
+        [GtkChild]
+        unowned Gtk.Button css_reset_btn;
+        [GtkChild]
         unowned Adw.ComboRow replaygain_row;
         [GtkChild]
         unowned Adw.ComboRow audiosink_row;
@@ -80,6 +84,15 @@ namespace G4 {
             _settings.bind ("remote-thumbnail", thumbnail_btn, "active", SettingsBindFlags.DEFAULT);
             _settings.bind ("play-background", playbkgnd_btn, "active", SettingsBindFlags.DEFAULT);
             _settings.bind ("rotate-cover", rotate_btn, "active", SettingsBindFlags.DEFAULT);
+
+            update_css_file_label ();
+            css_file_btn.clicked.connect (() => {
+                pick_css_file (app, this);
+            });
+            css_reset_btn.clicked.connect (() => {
+                _settings.set_string ("custom-css-path", "");
+                update_css_file_label ();
+            });
 
             replaygain_row.model = new Gtk.StringList ({_("Never"), _("Track"), _("Album")});
             _settings.bind ("replay-gain", replaygain_row, "selected", SettingsBindFlags.DEFAULT);
@@ -228,6 +241,82 @@ namespace G4 {
                     Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
                 );
             }
+        }
+
+        private void update_css_file_label () {
+            var path = _settings.get_string ("custom-css-path");
+            if (path.length == 0) {
+                css_file_btn.label = _("None");
+                css_reset_btn.sensitive = false;
+            } else {
+                var file = File.new_for_path (path);
+                css_file_btn.label = file.get_basename ();
+                css_reset_btn.sensitive = true;
+            }
+        }
+
+        private void pick_css_file (Application app, Gtk.Window? parent) {
+            var filter = new Gtk.FileFilter ();
+            filter.name = _("CSS Files");
+            filter.add_mime_type ("text/css");
+            filter.add_pattern ("*.css");
+
+            var current_path = _settings.get_string ("custom-css-path");
+            File? initial = null;
+            if (current_path.length > 0)
+                initial = File.new_for_path (current_path);
+
+#if GTK_4_10
+            var filter_list = new ListStore (typeof (Gtk.FileFilter));
+            filter_list.append (filter);
+            var all_filter = new Gtk.FileFilter ();
+            all_filter.name = _("All Files");
+            all_filter.add_pattern ("*");
+            filter_list.append (all_filter);
+            var dialog = new Gtk.FileDialog ();
+            dialog.filters = filter_list;
+            dialog.set_default_filter (filter);
+            if (initial != null)
+                dialog.set_initial_file ((!)initial);
+            dialog.modal = true;
+            dialog.open.begin (parent, null, (obj, res) => {
+                try {
+                    var file = dialog.open.end (res);
+                    var path = file.get_path ();
+                    if (path != null) {
+                        _settings.set_string ("custom-css-path", (!)path);
+                        update_css_file_label ();
+                    }
+                } catch (Error e) {
+                }
+            });
+#else
+            var chooser = new Gtk.FileChooserNative (null, parent, Gtk.FileChooserAction.OPEN, null, null);
+            chooser.modal = true;
+            chooser.add_filter (filter);
+            var all_filter = new Gtk.FileFilter ();
+            all_filter.name = _("All Files");
+            all_filter.add_pattern ("*");
+            chooser.add_filter (all_filter);
+            try {
+                if (initial != null)
+                    chooser.set_file ((!)initial);
+            } catch (Error e) {
+            }
+            chooser.response.connect ((id) => {
+                if (id == Gtk.ResponseType.ACCEPT) {
+                    var file = chooser.get_file ();
+                    if (file != null) {
+                        var path = ((!)file).get_path ();
+                        if (path != null) {
+                            _settings.set_string ("custom-css-path", (!)path);
+                            update_css_file_label ();
+                        }
+                    }
+                }
+            });
+            chooser.show ();
+#endif
         }
     }
 

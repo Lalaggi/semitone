@@ -27,6 +27,7 @@ namespace RepeatMode {
         private Thumbnailer _thumbnailer = new Thumbnailer ();
         private SleepTimer? _sleep_timer = null;
         private DiscordRPC? _discord_rpc = null;
+        private Gtk.CssProvider? _custom_css = null;
 
         public signal void index_changed (int index, uint size);
         public signal void music_changed (Music? music);
@@ -84,6 +85,11 @@ namespace RepeatMode {
             settings.bind ("volume", _player, "volume", SettingsBindFlags.DEFAULT);
             _queue_shuffled = settings.get_boolean ("queue-shuffled");
             _repeat_mode = settings.get_uint ("repeat-mode");
+
+            load_custom_css (settings.get_string ("custom-css-path"));
+            settings.changed["custom-css-path"].connect ((key) => {
+                load_custom_css (settings.get_string ("custom-css-path"));
+            });
             }
 
         public override void activate () {
@@ -587,6 +593,37 @@ public void restore_queue_order () {
                     return (int) i;
             }
             return -1;
+        }
+
+        private void load_custom_css (string path) {
+            var display = Gdk.Display.get_default ();
+            if (display == null) return;
+
+            if (_custom_css != null) {
+                Gtk.StyleContext.remove_provider_for_display ((!)display, (!)_custom_css);
+                _custom_css = null;
+            }
+
+            if (path.length == 0) return;
+
+            var file = File.new_for_path (path);
+            if (!file.query_exists ()) {
+                warning ("Custom CSS file not found: %s", path);
+                return;
+            }
+
+            _custom_css = new Gtk.CssProvider ();
+            try {
+                ((!)_custom_css).load_from_file (file);
+                Gtk.StyleContext.add_provider_for_display (
+                    (!)display,
+                    (!)_custom_css,
+                    Gtk.STYLE_PROVIDER_PRIORITY_USER
+                );
+            } catch (Error e) {
+                warning ("Failed to load custom CSS from %s: %s", path, e.message);
+                _custom_css = null;
+            }
         }
 
         private void on_bus_acquired (DBusConnection connection, string name) {

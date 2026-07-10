@@ -86,7 +86,7 @@ namespace G4 {
             _current_list = _main_list;
 
             _tracks_list = create_tracks_list ();
-            stack_view.add_titled (_tracks_list, PageName.TRACKS, _("Tracks")).icon_name = "audio-x-generic-symbolic";
+            stack_view.add_titled (_tracks_list, PageName.TRACKS, _("Tracks")).icon_name = "folder-music-symbolic";
 
             _artist_list = create_artist_list ();
             _artist_stack.add (_artist_list, PageName.ARTIST);
@@ -96,7 +96,7 @@ namespace G4 {
             _album_list = create_album_list ();
             _album_stack.add (_album_list, PageName.ALBUM);
             _album_stack.bind_property ("visible-child", this, "visible-child");
-            stack_view.add_titled (_album_stack.widget, PageName.ALBUM, _("Albums")).icon_name = "drive-multidisk-symbolic";
+            stack_view.add_titled (_album_stack.widget, PageName.ALBUM, _("Albums")).icon_name = "media-optical-cd-audio-symbolic";
 
             _playlist_list = create_playlist_list ();
             _playlist_stack.add (_playlist_list, PageName.PLAYLIST);
@@ -458,7 +458,7 @@ namespace G4 {
             var mlist = album_mode ? create_music_list ((!)album, artist_mode) : create_album_list (artist);
             mlist.update_store ();
 
-            var icon_name = (album is Playlist) ? "x-office-document-symbolic" : (album_mode ? "media-optical-cd-audio-symbolic" : "avatar-default-symbolic");
+            var icon_name = (album is Playlist) ? "view-list-symbolic" : (album_mode ? "media-optical-cd-audio-symbolic" : "avatar-default-symbolic");
             var title = (album_mode ? album?.title : artist?.title) ?? "";
             var header = create_title_bar (title, icon_name, album as Playlist);
             mlist.prepend (header);

@@ -61,6 +61,34 @@
             </child>
             <child>
               <object class="AdwActionRow">
+                <property name="icon-name">text-css-symbolic</property>
+                <property name="title" translatable="yes">Custom stylesheet</property>
+                <property name="subtitle" translatable="yes">Can break the app and is difficult to undo. Back up settings first.</property>
+                <child>
+                  <object class="GtkBox">
+                    <property name="valign">center</property>
+                    <property name="spacing">6</property>
+                    <child>
+                      <object class="GtkButton" id="css_file_btn">
+                        <property name="valign">center</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="css_reset_btn">
+                        <property name="valign">center</property>
+                        <property name="icon-name">edit-clear-symbolic</property>
+                        <property name="tooltip-text" translatable="yes">Clear custom stylesheet</property>
+                        <style>
+                          <class name="flat"/>
+                        </style>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow">
                 <property name="icon-name">view-grid-symbolic</property>
                 <property name="title" translatable="yes">Grid view for artists/albums</property>
                 <property name="activatable_widget">grid_btn</property>

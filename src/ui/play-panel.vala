@@ -87,7 +87,7 @@ utility_bar.margin_start = 24;
 utility_bar.margin_end = 24;
 utility_bar.margin_bottom = 12;
 
-var queue_btn = new Gtk.Button.from_icon_name ("media-playlist-consecutive-symbolic");
+var queue_btn = new Gtk.Button.from_icon_name ("view-sort-ascending-symbolic");
 queue_btn.tooltip_text = _("Queue");
 queue_btn.add_css_class ("flat");
 queue_btn.halign = Gtk.Align.START;
