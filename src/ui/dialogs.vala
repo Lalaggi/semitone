@@ -47,7 +47,7 @@ namespace G4 {
     }
 
     public void show_about_dialog (Application app) {
-        string[] authors = { "Lalaggi" };
+        string[] authors = { "Lalaggi, aka EliLovesComputers" };
         /* Translators: Replace "translator-credits" with your names, one name per line */
         var translator_credits = _("translator-credits");
         var website = "https://github.com/lalaggi/semitone";
@@ -68,6 +68,7 @@ namespace G4 {
         win.license_type = Gtk.License.GPL_3_0;
         win.developers = authors;
         win.website = website;
+        // Hidden easter egg: assets/elilovescomputers.png
         win.issue_url = "https://github.com/lalaggi/semitone/issues";
         win.translator_credits = translator_credits;
 #if ADW_1_5
