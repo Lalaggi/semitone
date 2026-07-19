@@ -14,6 +14,11 @@ namespace G4 {
             return (double) time / Gst.SECOND;
         }
 
+        public const int EQ_BANDS = 6;
+        public const double EQ_MIN_GAIN = -24.0;
+        public const double EQ_MAX_GAIN = 12.0;
+        private const double[] EQ_FREQS = { 62, 250, 1000, 4000, 8000, 10000 };
+
         public static void get_audio_sinks (GenericArray<Gst.ElementFactory> sinks) {
             var caps = new Gst.Caps.simple ("audio/x-raw", "format", Type.STRING, "S16LE", null);
             var list = Gst.ElementFactory.list_get_elements (Gst.ElementFactoryType.AUDIOVIDEO_SINKS, Gst.Rank.SECONDARY);
@@ -24,6 +29,7 @@ namespace G4 {
         private dynamic Gst.Pipeline? _pipeline = null;
         private dynamic Gst.Element? _audio_sink = null;
         private dynamic Gst.Element? _replay_gain = null;
+        private dynamic Gst.Element? _equalizer = null;
         private string _audio_sink_name = "";
         private int _audio_sink_requested = 0;
         private string? _current_uri = null;
@@ -182,6 +188,55 @@ namespace G4 {
             }
         }
 
+        public bool eq_enabled {
+            get {
+                return _equalizer != null;
+            }
+            set {
+                bool was_enabled = _equalizer != null;
+                if (value && !was_enabled) {
+                    _equalizer = Gst.ElementFactory.make ("equalizer-nbands", "eq");
+                    if (_equalizer != null) {
+                        ((!)_equalizer).set ("num-bands", EQ_BANDS);
+                        for (int i = 0; i < EQ_BANDS; i++) {
+                            var band = ((Gst.ChildProxy) (!)_equalizer).get_child_by_index (i);
+                            if (band != null) {
+                                ((!)band).set ("freq", EQ_FREQS[i]);
+                                double prev = i > 0 ? EQ_FREQS[i - 1] : EQ_FREQS[i] / 2;
+                                double next = i < EQ_BANDS - 1 ? EQ_FREQS[i + 1] : EQ_FREQS[i] * 2;
+                                ((!)band).set ("bandwidth", next - prev);
+                            }
+                        }
+                    }
+                } else if (!value && was_enabled) {
+                    _equalizer = null;
+                }
+                if (_pipeline != null && _current_uri != null)
+                    update_audio_sink ();
+                else
+                    AtomicInt.set (ref _audio_sink_requested, 1);
+            }
+        }
+
+        public double get_eq_band (int index) {
+            if (_equalizer == null || index < 0 || index >= EQ_BANDS)
+                return 0.0;
+            var band = ((Gst.ChildProxy) (!)_equalizer).get_child_by_index (index);
+            if (band == null)
+                return 0.0;
+            double gain = 0.0;
+            ((!)band).get ("gain", ref gain);
+            return gain;
+        }
+
+        public void set_eq_band (int index, double gain) {
+            if (_equalizer == null || index < 0 || index >= EQ_BANDS)
+                return;
+            var band = ((Gst.ChildProxy) (!)_equalizer).get_child_by_index (index);
+            if (band != null)
+                ((!)band).set ("gain", gain);
+        }
+
         public Gst.TagList? tag_list {
             get {
                 return _tag_list;
@@ -336,14 +391,36 @@ namespace G4 {
             }
             print (@"Enable ReplayGain: $(_replay_gain != null)\n");
 
+            if (_equalizer != null) {
+                (_equalizer?.parent as Gst.Bin)?.remove_element ((!)_equalizer);
+                sink_bin?.add ((!)_equalizer);
+            }
+            print (@"Enable Equalizer: $(_equalizer != null)\n");
+
+            Gst.Element? chain_head = null;
+            Gst.Element? chain_tail = null;
+
+            if (_replay_gain != null) {
+                chain_head = (!)_replay_gain;
+                chain_tail = (!)_replay_gain;
+            }
+            if (_equalizer != null) {
+                if (chain_head == null)
+                    chain_head = (!)_equalizer;
+                if (chain_tail != null)
+                    ((!)chain_tail).link ((!)_equalizer);
+                chain_tail = (!)_equalizer;
+            }
             if (_audio_sink != null) {
                 (_audio_sink?.parent as Gst.Bin)?.remove_element ((!)_audio_sink);
                 sink_bin?.add ((!)_audio_sink);
-                _replay_gain?.link ((!)_audio_sink);
+                if (chain_tail != null)
+                    ((!)chain_tail).link ((!)_audio_sink);
+                chain_tail = (!)_audio_sink;
             }
             print ("Audio Sink: %s\n", _audio_sink?.name ?? "");
 
-            Gst.Pad? static_pad = (_replay_gain ?? _audio_sink)?.get_static_pad ("sink");
+            Gst.Pad? static_pad = chain_head?.get_static_pad ("sink");
             if (static_pad != null) {
                 sink_bin?.add_pad (new Gst.GhostPad ("sink", (!)static_pad));
             } else {

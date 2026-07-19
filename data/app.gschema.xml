@@ -61,6 +61,40 @@
       <default>0</default>
       <summary>Normalize volume with ReplayGain</summary>
     </key>
+    <key name="eq-enabled" type="b">
+      <default>false</default>
+      <summary>Enable graphic equalizer</summary>
+    </key>
+    <key name="eq-band0" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 0 gain (dB)</summary>
+    </key>
+    <key name="eq-band1" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 1 gain (dB)</summary>
+    </key>
+    <key name="eq-band2" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 2 gain (dB)</summary>
+    </key>
+    <key name="eq-band3" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 3 gain (dB)</summary>
+    </key>
+    <key name="eq-band4" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 4 gain (dB)</summary>
+    </key>
+    <key name="eq-band5" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 5 gain (dB)</summary>
+    </key>
     <key name="rotate-cover" type="b">
       <default>true</default>
       <summary>Rotate album cover</summary>

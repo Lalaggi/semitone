@@ -5,6 +5,10 @@ namespace G4 {
         public const uint ART_ONLY = 2;
     }
 
+    public const string[] EQ_BAND_LABELS = {
+        "62", "250", "1k", "4k", "8k", "10k"
+    };
+
     [GtkTemplate (ui = "/com/github/lalaggi/semitone/gtk/preferences.ui")]
     public class PreferencesWindow : Adw.PreferencesWindow {
         [GtkChild]
@@ -33,6 +37,10 @@ namespace G4 {
         unowned Gtk.Button css_reset_btn;
         [GtkChild]
         unowned Adw.ComboRow replaygain_row;
+        [GtkChild]
+        unowned Adw.ExpanderRow eq_row;
+        [GtkChild]
+        unowned Gtk.Box eq_box;
         [GtkChild]
         unowned Adw.ComboRow audiosink_row;
         [GtkChild]
@@ -97,6 +105,9 @@ namespace G4 {
             replaygain_row.model = new Gtk.StringList ({_("Never"), _("Track"), _("Album")});
             _settings.bind ("replay-gain", replaygain_row, "selected", SettingsBindFlags.DEFAULT);
 
+            _settings.bind ("eq-enabled", eq_row, "enable-expansion", SettingsBindFlags.DEFAULT);
+            build_eq_sliders ();
+
             _settings.bind ("show-peak", peak_row, "enable_expansion", SettingsBindFlags.DEFAULT);
             _settings.bind ("peak-characters", peak_entry, "text", SettingsBindFlags.DEFAULT);
 
@@ -135,6 +146,40 @@ namespace G4 {
             audiosink_row.model = new Gtk.StringList (sink_names);
             this.bind_property ("audio_sink", audiosink_row, "selected",
                 BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
+        }
+
+        private void build_eq_sliders () {
+            for (int i = 0; i < GstPlayer.EQ_BANDS; i++) {
+                var adj = new Gtk.Adjustment (
+                    _settings.get_double ("eq-band%d".printf (i)),
+                    GstPlayer.EQ_MIN_GAIN, GstPlayer.EQ_MAX_GAIN, 1.0, 3.0, 0.0);
+                _settings.bind ("eq-band%d".printf (i), adj, "value", SettingsBindFlags.DEFAULT);
+
+                var scale = new Gtk.Scale (Gtk.Orientation.VERTICAL, adj) {
+                    inverted = true,
+                    draw_value = true,
+                    has_origin = false,
+                    value_pos = Gtk.PositionType.BOTTOM,
+                    digits = 0,
+                    width_request = 48,
+                    height_request = 160,
+                    valign = Gtk.Align.CENTER,
+                };
+                scale.add_mark (0.0, Gtk.PositionType.LEFT, null);
+
+                var label = new Gtk.Label (EQ_BAND_LABELS[i]) {
+                    xalign = 0.5f,
+                };
+
+                var col = new Gtk.Box (Gtk.Orientation.VERTICAL, 4) {
+                    valign = Gtk.Align.CENTER,
+                    homogeneous = false,
+                };
+                col.append (scale);
+                col.append (label);
+
+                eq_box.append (col);
+            }
         }
 
         private void update_auto_indicator () {

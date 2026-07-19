@@ -209,6 +209,25 @@
               </object>
             </child>
             <child>
+              <object class="AdwExpanderRow" id="eq_row">
+                <property name="icon-name">audio-equalizer-symbolic</property>
+                <property name="title" translatable="yes">Graphic equalizer</property>
+                <property name="show-enable-switch">true</property>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Bands (dB)</property>
+                    <child>
+                      <object class="GtkBox" id="eq_box">
+                        <property name="valign">center</property>
+                        <property name="homogeneous">true</property>
+                        <property name="spacing">6</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
               <object class="AdwComboRow" id="audiosink_row">
                 <property name="icon-name">audio-card-symbolic</property>
                 <property name="title" translatable="yes">Prefer audio sink of GStreamer</property>

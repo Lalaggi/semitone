@@ -81,6 +81,19 @@ namespace RepeatMode {
             settings.bind ("remote-thumbnail", _thumbnailer, "remote-thumbnail", SettingsBindFlags.DEFAULT);
 
             settings.bind ("replay-gain", _player, "replay-gain", SettingsBindFlags.DEFAULT);
+            settings.bind ("eq-enabled", _player, "eq-enabled", SettingsBindFlags.DEFAULT);
+            settings.changed["eq-enabled"].connect (() => {
+                for (int i = 0; i < GstPlayer.EQ_BANDS; i++)
+                    _player.set_eq_band (i, settings.get_double ("eq-band%d".printf (i)));
+            });
+            for (int i = 0; i < GstPlayer.EQ_BANDS; i++) {
+                int band = i;
+                var key = "eq-band%d".printf (band);
+                settings.changed[key].connect (() => {
+                    _player.set_eq_band (band, settings.get_double (key));
+                });
+                _player.set_eq_band (band, settings.get_double (key));
+            }
             settings.bind ("audio-sink", _player, "audio-sink", SettingsBindFlags.DEFAULT);
             settings.bind ("volume", _player, "volume", SettingsBindFlags.DEFAULT);
             _queue_shuffled = settings.get_boolean ("queue-shuffled");
