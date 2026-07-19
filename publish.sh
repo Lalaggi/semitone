@@ -40,6 +40,15 @@ build_and_export "pkgs/flatpak/org.codeberg.el1lovescomputers.semitone.json" "se
 # Velox
 build_and_export "../Velox/pkgs/flatpak/org.codeberg.el1lovescomputers.velox.json" "velox"
 
+# AriaGUI
+build_and_export "pkgs/flatpak/org.codeberg.el1lovescomputers.ariagui.json" "ariagui"
+
+# Streamline
+build_and_export "../Streamline/pkgs/flatpak/org.codeberg.el1lovescomputers.streamline.json" "streamline"
+
+# WayClicker (formerly linux-autoclicker)
+build_and_export "../LinuxAutoclicker/pkgs/flatpak/org.codeberg.el1lovescomputers.wayclicker.json" "wayclicker"
+
 echo "=== Finalizing repo ==="
 if [ -n "$GPG_KEYID" ]; then
     echo "Signing repo with GPG key ${GPG_KEYID}"
@@ -56,3 +65,6 @@ echo "    --gpg-import=https://el1lovescomputers.codeberg.page/flatpak-repo/flat
 echo "    https://el1lovescomputers.codeberg.page/flatpak-repo/repo/"
 echo "  flatpak install el1-flatpak org.codeberg.el1lovescomputers.semitone"
 echo "  flatpak install el1-flatpak org.codeberg.el1lovescomputers.velox"
+echo "  flatpak install el1-flatpak org.codeberg.el1lovescomputers.ariagui"
+echo "  flatpak install el1-flatpak org.codeberg.el1lovescomputers.streamline"
+echo "  flatpak install el1-flatpak org.codeberg.el1lovescomputers.wayclicker"
