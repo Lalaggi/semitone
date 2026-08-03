@@ -7,18 +7,18 @@
   <shortdesc xml:lang="en">Play your music elegantly</shortdesc>
   <description xml:lang="en">A fast, fluent, lightweight music player written in GTK4/libadwaita, with synced lyrics, queue management, sleep timer, and a beautiful adaptive user interface.</description>
   <category rdf:resource="http://api.gnome.org/doap-extensions#apps" />
-  <homepage rdf:resource="https://codeberg.org/el1lovescomputers/semitone" />
-  <bug-database rdf:resource="https://codeberg.org/el1lovescomputers/semitone/issues" />
+  <homepage rdf:resource="https://github.com/Lalaggi/Semitone" />
+  <bug-database rdf:resource="https://github.com/Lalaggi/Semitone/issues" />
   <programming-language>Vala</programming-language>
   <platform>GTK 4</platform>
   <platform>Libadwaita</platform>
   <maintainer>
     <foaf:Person>
-      <foaf:name>el1lovescomputers</foaf:name>
+      <foaf:name>Lalaggi</foaf:name>
       <foaf:account>
         <foaf:OnlineAccount>
-          <foaf:accountServiceHomepage rdf:resource="https://codeberg.org"/>
-          <foaf:accountName>el1lovescomputers</foaf:accountName>
+          <foaf:accountServiceHomepage rdf:resource="https://github.com"/>
+          <foaf:accountName>Lalaggi</foaf:accountName>
         </foaf:OnlineAccount>
       </foaf:account>
     </foaf:Person>

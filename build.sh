@@ -9,15 +9,15 @@ if ! ls /proc/sys/fs/binfmt_misc/qemu-aarch64 2>/dev/null; then
 fi
 
 echo "=== Building Flatpak x86-64 bundle ==="
-flatpak-builder --force-clean --user --install-deps-from=flathub --arch=x86_64 flatpak-build-x64 pkgs/flatpak/org.codeberg.el1lovescomputers.semitone.json
+flatpak-builder --force-clean --user --install-deps-from=flathub --arch=x86_64 flatpak-build-x64 pkgs/flatpak/com.github.lalaggi.semitone.json
 flatpak build-export flatpak-repo-x64 flatpak-build-x64
-flatpak build-bundle flatpak-repo-x64 flatpak-downloads/Semitone-x86-64.flatpak org.codeberg.el1lovescomputers.semitone --arch=x86_64
+flatpak build-bundle flatpak-repo-x64 flatpak-downloads/Semitone-x86-64.flatpak com.github.lalaggi.semitone --arch=x86_64
 rm -rf flatpak-build-x64 flatpak-repo-x64
 
 echo "=== Building Flatpak arm64 bundle ==="
-if flatpak-builder --force-clean --user --install-deps-from=flathub --arch=aarch64 flatpak-build-arm64 pkgs/flatpak/org.codeberg.el1lovescomputers.semitone.json; then
+if flatpak-builder --force-clean --user --install-deps-from=flathub --arch=aarch64 flatpak-build-arm64 pkgs/flatpak/com.github.lalaggi.semitone.json; then
   flatpak build-export flatpak-repo-arm64 flatpak-build-arm64
-  flatpak build-bundle flatpak-repo-arm64 flatpak-downloads/Semitone-arm64.flatpak org.codeberg.el1lovescomputers.semitone --arch=aarch64
+  flatpak build-bundle flatpak-repo-arm64 flatpak-downloads/Semitone-arm64.flatpak com.github.lalaggi.semitone --arch=aarch64
   rm -rf flatpak-build-arm64 flatpak-repo-arm64
 else
   echo "Skipping arm64 build (requires aarch64 host or cross-compilation setup)"
@@ -34,4 +34,4 @@ sudo ninja -C build install || {
 
 echo "=== Done ==="
 echo "Flatpak bundles saved to flatpak-downloads/"
-echo "Download from: https://codeberg.org/el1lovescomputers/Semitone/src/branch/main/flatpak-downloads/"
+echo "Download from: https://github.com/Lalaggi/Semitone/tree/main/flatpak-downloads/"

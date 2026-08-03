@@ -4,7 +4,7 @@
 
 A lightweight GTK4 music player written in Vala.
 
-**Source:** [codeberg.org/el1lovescomputers/semitone](https://codeberg.org/el1lovescomputers/semitone)
+**Source:** [github.com/Lalaggi/Semitone](https://github.com/Lalaggi/Semitone)
 
 ## Features
 
@@ -54,7 +54,7 @@ sudo apk add vala meson gtk4.0-dev libadwaita-dev gstreamer-dev gst-plugins-base
 
 ### Flatpak
 
-Pre-built flatpak packages are available in [flatpak-downloads](https://codeberg.org/el1lovescomputers/Semitone/src/branch/main/flatpak-downloads). May be slightly behind the latest version.
+Pre-built flatpak packages are available in [flatpak-downloads](https://github.com/Lalaggi/Semitone/tree/main/flatpak-downloads). May be slightly behind the latest version.
 
 ### Recommended: [gitpkg](https://codeberg.org/el1lovescomputers/gitpkg)
 
@@ -66,7 +66,7 @@ gitpkg install el1lovescomputers/semitone --supplier "codeberg.org"
 ### From Source
 
 ```bash
-git clone https://codeberg.org/el1lovescomputers/semitone
+git clone https://github.com/Lalaggi/Semitone
 cd semitone
 meson setup build --buildtype=release --prefix=/usr
 sudo ninja -C build install
@@ -74,4 +74,4 @@ sudo ninja -C build install
 
 ## Reporting Issues
 
-https://codeberg.org/el1lovescomputers/semitone/issues
+https://github.com/Lalaggi/Semitone/issues

@@ -2,7 +2,4 @@
 build
 builddir
 flatpak-build*
-flatpak-repo*
-my-repo
-build.sh
 probeBetterLyrics.py
