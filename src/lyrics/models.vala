@@ -19,6 +19,7 @@ namespace G4 {
         public LyricLine[] lines;
         public bool is_synced;
         public double score;
+        public LyricsFormat format;
     }
 
     public struct LrclibResult {
@@ -46,6 +47,33 @@ namespace G4 {
     }
 
     public static bool lyrics_debug_enabled = false;
+
+    public string lyrics_format_source (LyricsFormat format) {
+        switch (format) {
+            case LyricsFormat.TTML_WORD_SYNCED: return "ttml-word";
+            case LyricsFormat.TTML_LINE_SYNCED: return "ttml-line";
+            case LyricsFormat.TTML_UNSYNCED:    return "ttml";
+            case LyricsFormat.LRC_PLUS:         return "lrc+";
+            case LyricsFormat.EXTENDED_LRC:     return "elrc";
+            case LyricsFormat.LRC:              return "lrc";
+            case LyricsFormat.PLAIN:
+            default:                            return "plain";
+        }
+    }
+
+    public string lyrics_format_synced (LyricsFormat format) {
+        switch (format) {
+            case LyricsFormat.TTML_WORD_SYNCED:
+            case LyricsFormat.LRC_PLUS:
+            case LyricsFormat.EXTENDED_LRC:
+                return "Word";
+            case LyricsFormat.TTML_LINE_SYNCED:
+            case LyricsFormat.LRC:
+                return "Line";
+            default:
+                return "None";
+        }
+    }
 
     public void lyrics_log (string msg) {
         GLib.message ("[Lyrics] %s", msg);

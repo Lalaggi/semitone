@@ -2,19 +2,15 @@ namespace G4 {
 
     public async LyricsCandidate? provider_fetch_musicbrainz (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-musicbrainz-enabled")) {
-            lyrics_log ("MusicBrainz: disabled");
+            lyrics_log ("MusicBrainz: disable");
             return null;
         }
 
-        // Step 1: Search for the recording to get its MBID
-        // Use unquoted terms for fuzzy Lucene matching (quotes force exact match which can
-        // fail when MusicBrainz has slightly different titles like "Epilouge" vs "Epilogue")
         var query = "recording:%s AND artist:%s".printf (
             Uri.escape_string (music.title, null, false),
             Uri.escape_string (music.artist, null, false));
         var search_url = "https://musicbrainz.org/ws/2/recording/?query=%s&fmt=json&limit=1".printf (
             Uri.escape_string (query, null, false));
-        lyrics_log ("MusicBrainz: searching %s".printf (search_url));
 
         var body = yield lyrics_http_get (search_url, cancellable);
         if (body == null) return null;
@@ -28,30 +24,21 @@ namespace G4 {
             var obj = (!)root_obj;
 
             var recordings = obj.get_array_member ("recordings");
-            if (recordings == null || ((!)recordings).get_length () < 1) {
-                lyrics_log ("MusicBrainz: no recordings found for query");
+            if (recordings == null || ((!)recordings).get_length () < 1)
                 return null;
-            }
             var first_rec = ((!)recordings).get_element (0).get_object ();
             if (first_rec == null) return null;
 
             var score = ((!)first_rec).get_int_member ("score");
-            if (score < 50) {
-                lyrics_log ("MusicBrainz: best match score %lld too low, skipping".printf (score));
+            if (score < 50)
                 return null;
-            }
 
             recording_id = ((!)first_rec).get_string_member ("id");
             if (recording_id == null) return null;
-            lyrics_log ("MusicBrainz: found recording %s (score=%lld)".printf ((!)recording_id, score));
         } catch (Error e) {
-            lyrics_log ("MusicBrainz search parse error: %s".printf (e.message));
             return null;
         }
 
-        // Step 2: Fetch the full recording with tags and work relationships.
-        // Works carry type (Song/Instrumental/etc.) and language (eng/zxx/etc.) that are
-        // more reliable for instrumental detection than recording-level tags.
         var inc = "tags+work-rels";
         var detail_url = "https://musicbrainz.org/ws/2/recording/%s?fmt=json&inc=%s".printf (
             (!)recording_id, inc);
@@ -65,7 +52,6 @@ namespace G4 {
             if (root_obj == null) return null;
             var rec = (!)root_obj;
 
-            // Check 1: Recording-level tags for "instrumental"
             if (rec.has_member ("tags")) {
                 var tags = rec.get_array_member ("tags");
                 if (tags != null) {
@@ -75,20 +61,13 @@ namespace G4 {
                         if (tag_obj == null) continue;
                         string? tag_name = ((!)tag_obj).get_string_member ("name");
                         if (tag_name != null && ((!)tag_name).ascii_ncasecmp ("instrumental", 13) == 0) {
-                            lyrics_log ("MusicBrainz: recording tagged as instrumental");
-                            LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0 };
+                            LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN };
                             return c;
                         }
                     }
                 }
             }
 
-            // Check 2: Work-level type and language indicators.
-            // Works carry type (Song/Instrumental/...) and language (eng/zxx/...).
-            // Only check the most relevant works (top 3 by title match) to avoid
-            // flagging instrumental renditions of a primarily vocal track.
-            // Language "zxx" = ISO 639-3 for "no linguistic content" → instrumental.
-            // Work type "Instrumental" is definitive.
             string rec_title = rec.has_member ("title")
                 ? rec.get_string_member ("title") : music.title;
             bool work_has_zxx = false;
@@ -117,19 +96,17 @@ namespace G4 {
                         var w_type = w.has_member ("type") ? w.get_string_member ("type") : "";
                         var w_lang = w.has_member ("language") ? w.get_string_member ("language") : "";
 
-                        // Score relevance: prefer works whose title matches the recording
                         var score = 0;
                         if (rec_title.length > 0 && w_title.length > 0) {
                             var t_down = w_title.down ();
                             var r_down = rec_title.down ();
                             if (t_down == r_down) {
-                                score = 100;  // exact title match
+                                score = 100;
                             } else if (t_down.contains (r_down) || r_down.contains (t_down)) {
-                                score = 50;   // partial match
+                                score = 50;
                             }
                         }
 
-                        // Insert in descending score order (keep top 3)
                         var insert_at = -1;
                         for (var si = 0; si < work_scores.length; si++) {
                             if (score > work_scores[si]) {
@@ -158,14 +135,12 @@ namespace G4 {
                 }
             }
 
-            // Check the top relevant works for instrumental signals
             for (var wi = 0; wi < work_scores.length; wi++) {
                 var w_type = work_types[wi];
                 var w_lang = work_languages[wi];
 
                 if (w_type.ascii_ncasecmp ("Instrumental", 13) == 0) {
-                    lyrics_log ("MusicBrainz: work type is Instrumental (relevance score=%d)".printf (work_scores[wi]));
-                    LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0 };
+                    LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN };
                     return c;
                 }
 
@@ -174,8 +149,6 @@ namespace G4 {
                 }
             }
 
-            // If a relevant work has language "zxx" (no linguistic content), verify with
-            // work-level tags, then trust the zxx signal.
             if (work_has_zxx) {
                 for (var wi = 0; wi < work_ids_to_check.length; wi++) {
                     if (work_languages[wi] != "zxx") continue;
@@ -199,27 +172,22 @@ namespace G4 {
                                     if (tag_obj == null) continue;
                                     string? tag_name = ((!)tag_obj).get_string_member ("name");
                                     if (tag_name != null && ((!)tag_name).ascii_ncasecmp ("instrumental", 13) == 0) {
-                                        lyrics_log ("MusicBrainz: work tagged as instrumental (zxx language)");
-                                        LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0 };
+                                        LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN };
                                         return c;
                                     }
                                 }
                             }
                         }
                     } catch (Error e) {
-                        lyrics_log ("MusicBrainz work tag parse error: %s".printf (e.message));
                     }
                 }
 
-                lyrics_log ("MusicBrainz: relevant work language is zxx - marking instrumental");
-                LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0 };
+                LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN };
                 return c;
             }
 
-            lyrics_log ("MusicBrainz: recording found but not instrumental");
             return null;
         } catch (Error e) {
-            lyrics_log ("MusicBrainz detail parse error: %s".printf (e.message));
             return null;
         }
     }

@@ -14,10 +14,7 @@ namespace G4 {
             msg.request_headers.append ("User-Agent", "Semitone/1.0");
             var stream = yield lyrics_http_session ().send_async (msg, GLib.Priority.DEFAULT, cancellable);
             if (cancellable != null && ((!)cancellable).is_cancelled ()) return null;
-            if (msg.status_code != 200) {
-                lyrics_log ("HTTP %u for %s".printf (msg.status_code, url));
-                return null;
-            }
+            if (msg.status_code != 200) return null;
             var dis = new DataInputStream (stream);
             var sb = new StringBuilder ();
             string? line = null;
@@ -30,7 +27,6 @@ namespace G4 {
             } while (line != null);
             return sb.str;
         } catch (Error e) {
-            lyrics_log ("HTTP error for %s: %s".printf (url, e.message));
             return null;
         }
     }
@@ -42,10 +38,7 @@ namespace G4 {
                 msg.request_headers.append (headers[i, 0], headers[i, 1]);
             var stream = yield lyrics_http_session ().send_async (msg, GLib.Priority.DEFAULT, cancellable);
             if (cancellable != null && ((!)cancellable).is_cancelled ()) return null;
-            if (msg.status_code != 200) {
-                lyrics_log ("HTTP %u for %s".printf (msg.status_code, url));
-                return null;
-            }
+            if (msg.status_code != 200) return null;
             var dis = new DataInputStream (stream);
             var sb = new StringBuilder ();
             string? line = null;
@@ -58,7 +51,6 @@ namespace G4 {
             } while (line != null);
             return sb.str;
         } catch (Error e) {
-            lyrics_log ("HTTP error for %s: %s".printf (url, e.message));
             return null;
         }
     }
@@ -80,12 +72,8 @@ namespace G4 {
                     sb.append_c ('\n');
                 }
             } while (line != null);
-            if (msg.status_code < 200 || msg.status_code >= 400) {
-                lyrics_log ("HTTP %u for %s, body: %.200s".printf (msg.status_code, url, sb.str));
-            }
             return sb.str;
         } catch (Error e) {
-            lyrics_log ("HTTP error for %s: %s".printf (url, e.message));
             return null;
         }
     }

@@ -2,7 +2,7 @@ namespace G4 {
 
     public async LyricsCandidate? provider_fetch_netease (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-netease-enabled")) {
-            lyrics_log ("NetEase: disabled");
+            lyrics_log ("NetEase: disable");
             return null;
         }
 

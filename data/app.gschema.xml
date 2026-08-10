@@ -23,9 +23,10 @@
       <default>0</default>
       <summary>Prefer color scheme</summary>
     </key>
-    <key name="compact-playlist" type="b">
-      <default>false</default>
-      <summary>Compact playlist view</summary>
+    <key name="list-density" type="i">
+      <range min="0" max="2"/>
+      <default>1</default>
+      <summary>List density: 0 = compact, 1 = normal, 2 = roomy</summary>
     </key>
     <key name="grid-mode" type="b">
       <default>true</default>
@@ -203,7 +204,7 @@
       <summary>Auto-scroll resume delay in milliseconds after user scroll</summary>
     </key>
     <key name="lyrics-provider-order" type="s">
-      <default>'betterlyrics,simpmusic,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch'</default>
+      <default>'betterlyrics,simpmusic,musicbrainz,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch'</default>
       <summary>Comma-separated provider priority order</summary>
     </key>
   </schema>

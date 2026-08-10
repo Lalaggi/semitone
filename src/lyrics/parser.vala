@@ -119,8 +119,8 @@ namespace G4 {
         var parsed = parse (raw, format);
         if (parsed.length == 0) return null;
         bool synced = format != LyricsFormat.PLAIN && format != LyricsFormat.TTML_UNSYNCED;
-        var score = lyrics_score_candidate (parsed, synced, raw, index, provider);
-        LyricsCandidate c = { raw, provider, parsed, synced, score };
+        var score = lyrics_score_candidate (parsed, format, index, provider);
+        LyricsCandidate c = { raw, provider, parsed, synced, score, format };
         return c;
     }
 

@@ -2,13 +2,12 @@ namespace G4 {
 
     public async LyricsCandidate? provider_fetch_musixmatch (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-musixmatch-enabled")) {
-            lyrics_log ("Musixmatch: disabled");
+            lyrics_log ("Musixmatch: disable");
             return null;
         }
 
         var mm_key = read_api_key_file ("musixmatch-api-key");
         if (mm_key == null) {
-            lyrics_log ("Musixmatch: no API key, skipping");
             return null;
         }
 

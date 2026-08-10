@@ -2,7 +2,7 @@ namespace G4 {
 
     public async LyricsCandidate? provider_fetch_megalobiz (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-megalobiz-enabled")) {
-            lyrics_log ("Megalobiz: disabled");
+            lyrics_log ("Megalobiz: disable");
             return null;
         }
 

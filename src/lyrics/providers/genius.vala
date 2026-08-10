@@ -2,7 +2,7 @@ namespace G4 {
 
     public async LyricsCandidate? provider_fetch_genius (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-genius-enabled")) {
-            lyrics_log ("Genius: disabled");
+            lyrics_log ("Genius: disable");
             return null;
         }
 

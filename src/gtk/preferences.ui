@@ -19,11 +19,23 @@
             <child>
               <object class="AdwActionRow">
                 <property name="icon-name">view-list-symbolic</property>
-                <property name="title" translatable="yes">Compact playlist view</property>
-                <property name="activatable_widget">compact_btn</property>
-                <child>
-                  <object class="GtkSwitch" id="compact_btn">
+                <property name="title" translatable="yes">List density</property>
+                <property name="subtitle" translatable="yes">Compact, normal or roomy song lists</property>
+                <child type="suffix">
+                  <object class="GtkScale" id="density_slider">
                     <property name="valign">center</property>
+                    <property name="width-request">160</property>
+                    <property name="draw-value">false</property>
+                    <property name="digits">0</property>
+                    <property name="adjustment">
+                      <object class="GtkAdjustment" id="density_adjustment">
+                        <property name="lower">0</property>
+                        <property name="upper">2</property>
+                        <property name="step-increment">1</property>
+                        <property name="page-increment">1</property>
+                        <property name="value">1</property>
+                      </object>
+                    </property>
                   </object>
                 </child>
               </object>

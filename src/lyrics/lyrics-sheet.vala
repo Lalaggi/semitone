@@ -24,6 +24,8 @@ namespace G4 {
         private bool _user_scrolling = false;
         private uint _auto_scroll_timeout = 0;
         private bool _programmatic_scroll = false;
+        private int _previous_first_active = -1;
+        private string[] _last_markup = {};
 
         public LyricsSheet (Application app) {
             _app = app;
@@ -87,7 +89,6 @@ namespace G4 {
             refresh_btn.tooltip_text = _("Refresh lyrics");
             refresh_btn.add_css_class ("flat");
             refresh_btn.clicked.connect (() => {
-                lyrics_log ("Manual refresh requested, clearing cache");
                 cancel_current_load ();
                 lyrics_clear_cache (_current_uri);
                 load_lyrics.begin ();
@@ -162,8 +163,11 @@ namespace G4 {
                 cancel_current_load ();
                 cancel_auto_scroll_timeout ();
                 _active_indices = {};
+                _last_markup = {};
+                _previous_first_active = -1;
                 _offset_ms = 0;
                 update_offset_label ();
+                scroll_to_top ();
                 if (bottom_sheet.open)
                     load_lyrics.begin ();
             });
@@ -173,6 +177,13 @@ namespace G4 {
 
         public void open () {
             bottom_sheet.open = true;
+        }
+
+        private void scroll_to_top () {
+            var adj = _scroll.vadjustment;
+            _programmatic_scroll = true;
+            adj.value = adj.lower;
+            _programmatic_scroll = false;
         }
 
         private void update_box_height () {
@@ -320,25 +331,28 @@ namespace G4 {
                 child = next;
             }
 
-            if (new_active.length > 0 && !_user_scrolling) {
-                var first_active = new_active[0];
-                var active_row = _list_box.get_row_at_index (first_active);
-                if (active_row != null) {
-                    Idle.add (() => {
-                        var r = (!)active_row;
-                        var bounds = Graphene.Rect ();
-                        r.compute_bounds (_scroll, out bounds);
-                        var adj = _scroll.vadjustment;
-                        // compute_bounds returns coordinates relative to the visible
-                        // area, so add the current scroll offset to get content coords
-                        _programmatic_scroll = true;
-                        var target = bounds.get_y () + adj.get_value ()
-                            + (bounds.get_height () / 2.0) - (adj.page_size / 2.0);
-                        adj.set_value (target.clamp (adj.lower, adj.upper - adj.page_size));
-                        _programmatic_scroll = false;
-                        return false;
-                    });
+            var first_active = new_active.length > 0 ? new_active[0] : -1;
+            if (first_active != _previous_first_active && !_user_scrolling) {
+                _previous_first_active = first_active;
+                if (first_active >= 0) {
+                    var active_row = _list_box.get_row_at_index (first_active);
+                    if (active_row != null) {
+                        Idle.add (() => {
+                            var r = (!)active_row;
+                            var bounds = Graphene.Rect ();
+                            r.compute_bounds (_scroll, out bounds);
+                            var adj = _scroll.vadjustment;
+                            _programmatic_scroll = true;
+                            var target = bounds.get_y () + adj.get_value ()
+                                + (bounds.get_height () / 2.0) - (adj.page_size / 2.0);
+                            adj.set_value (target.clamp (adj.lower, adj.upper - adj.page_size));
+                            _programmatic_scroll = false;
+                            return false;
+                        });
+                    }
                 }
+            } else if (new_active.length == 0) {
+                _previous_first_active = -1;
             }
         }
 
@@ -347,7 +361,12 @@ namespace G4 {
             if (row == null) return;
             var label = ((!)row).child as Gtk.Label;
             if (label == null) return;
-            ((!)label).set_label (build_line_markup (_lines[line_index], sec));
+            var markup = build_line_markup (_lines[line_index], sec);
+            if (line_index < _last_markup.length && _last_markup[line_index] == markup) return;
+            if (line_index >= _last_markup.length)
+                _last_markup.resize (line_index + 1);
+            _last_markup[line_index] = markup;
+            ((!)label).set_label (markup);
         }
 
         private string build_line_markup (LyricLine line, double sec) {
@@ -387,6 +406,8 @@ namespace G4 {
 
         private void populate_list () {
             clear_list ();
+            _last_markup = {};
+            _previous_first_active = -1;
             _offset_box.visible = _is_synced;
 
             foreach (var line in _lines) {
@@ -524,7 +545,6 @@ namespace G4 {
             _load_gen++;
             _loading_in_progress = false;
             if (_load_cancellable != null) {
-                lyrics_log ("Cancelling current lyrics load");
                 ((!)_load_cancellable).cancel ();
                 _load_cancellable = null;
             }
@@ -535,7 +555,6 @@ namespace G4 {
         private async void load_lyrics () {
             var gen = _load_gen;
             if (_loading_in_progress) {
-                lyrics_log ("load_lyrics[%d]: already in progress, skipping".printf (gen));
                 return;
             }
             _loading_in_progress = true;
@@ -543,6 +562,8 @@ namespace G4 {
             _lines = {};
             _is_synced = false;
             _active_indices = {};
+            _last_markup = {};
+            _previous_first_active = -1;
             _current_raw = "";
             _offset_ms = 0;
             update_offset_label ();
@@ -552,7 +573,6 @@ namespace G4 {
 
             var music = _app.current_music;
             if (music == null) {
-                lyrics_log ("load_lyrics[%d]: No current music, aborting".printf (gen));
                 _loading_in_progress = false;
                 _load_cancellable = null;
                 show_not_found ();
@@ -561,10 +581,6 @@ namespace G4 {
             var m = (!)music;
             _current_uri = m.uri;
 
-            lyrics_log ("load_lyrics[%d]: Loading lyrics for: '%s' by '%s' (album: '%s')".printf (
-                gen, m.title, m.artist, m.album));
-
-            lyrics_log ("load_lyrics[%d]: Checking cache...".printf (gen));
             string cached_raw, cached_provider;
             int64 cached_offset;
             if (lyrics_load_cache (_current_uri, out cached_raw, out cached_provider, out cached_offset)) {
@@ -574,7 +590,6 @@ namespace G4 {
                 set_provider (cached_provider + " (cached)");
 
                 if (cached_provider == "instrumental" || cached_raw == "[instrumental]") {
-                    lyrics_log ("load_lyrics[%d]: Cache: track is marked as instrumental".printf (gen));
                     _is_instrumental = true;
                     _lines = {};
                     show_instrumental ();
@@ -588,7 +603,6 @@ namespace G4 {
                 _lines = parse (cached_raw, format);
 
                 if (_lines.length > 0) {
-                    lyrics_log ("load_lyrics[%d]: Loaded from cache, %d lines".printf (gen, _lines.length));
                     _loading_in_progress = false;
                     _load_cancellable = null;
                     populate_list ();
@@ -608,7 +622,6 @@ namespace G4 {
             _engine.disconnect (handler_id);
 
             if (gen != _load_gen) {
-                lyrics_log ("load_lyrics[%d]: Stale result, current gen is %d, discarding".printf (gen, _load_gen));
                 _load_cancellable = null;
                 return;
             }
@@ -617,10 +630,8 @@ namespace G4 {
             _load_cancellable = null;
 
             if (best == null) {
-                lyrics_log ("load_lyrics[%d]: All providers failed or returned nothing".printf (gen));
                 set_provider ("");
                 if (_is_instrumental) {
-                    lyrics_log ("load_lyrics[%d]: Track is instrumental, caching and showing".printf (gen));
                     _current_raw = "[instrumental]";
                     lyrics_save_cache (_current_uri, _current_raw, "instrumental", 0);
                     show_instrumental ();
@@ -634,10 +645,7 @@ namespace G4 {
         }
 
         private void apply_candidate (int gen, LyricsCandidate c) {
-            lyrics_log ("apply_candidate[%d]: Applying candidate: %s (score=%.1f, %d lines, synced=%s)".printf (
-                gen, c.provider, c.score, c.lines.length, c.is_synced.to_string ()));
             if (gen != _load_gen) {
-                lyrics_log ("apply_candidate[%d]: Stale result for song %d, skipping".printf (gen, _load_gen));
                 return;
             }
             if (c.lines.length == 0 && c.raw == "[instrumental]") {

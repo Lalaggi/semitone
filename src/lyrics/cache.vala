@@ -32,9 +32,9 @@ namespace G4 {
 
         try {
             gen.to_file (path);
-            lyrics_log ("Cache saved to %s".printf (path));
         } catch (Error e) {
-            lyrics_log ("Cache save failed: %s".printf (e.message));
+            if (lyrics_debug_enabled)
+                lyrics_log ("Cache save failed: %s".printf (e.message));
         }
     }
 
@@ -55,26 +55,18 @@ namespace G4 {
 
             var fetched_at = obj.get_int_member ("fetched_at");
             var now = (int64) GLib.get_real_time () / 1000000;
-            if (fetched_at > 0 && (now - fetched_at) > 7 * 24 * 3600) {
-                lyrics_log ("Cache is stale (>7 days), will re-fetch");
+            if (fetched_at > 0 && (now - fetched_at) > 7 * 24 * 3600)
                 return false;
-            }
 
             provider = obj.get_string_member ("provider");
             offset = obj.get_int_member ("offset_ms");
             raw = obj.get_string_member ("lyrics");
 
-            lyrics_log ("Cache hit: provider='%s', offset=%lld, raw length=%d".printf (
-                provider, offset, raw.length));
-
-            if (raw.length == 0) {
-                lyrics_log ("Cache has empty lyrics, ignoring");
+            if (raw.length == 0)
                 return false;
-            }
 
             return true;
         } catch (Error e) {
-            lyrics_log ("No cache for this track");
             return false;
         }
     }
@@ -83,6 +75,5 @@ namespace G4 {
         if (uri.length == 0) return;
         var path = lyrics_cache_path (uri);
         FileUtils.unlink (path);
-        lyrics_log ("Cache cleared: %s".printf (path));
     }
 }

@@ -67,19 +67,19 @@ namespace G4 {
 
             if (r.duration_ms > 0) {
                 var diff = (r.duration_ms - duration_ms).abs ();
-                if (diff <= 2000)       score += 100.0;
-                else if (diff <= 5000)  score += 50.0;
-                else if (diff <= 10000) score += 10.0;
-                else                    score -= 50.0;
+                if (diff <= 2000)       score += 30.0;
+                else if (diff <= 5000)  score += 15.0;
+                else if (diff <= 10000) score += 5.0;
+                else                    score -= 30.0;
             }
 
             var result_clean = cleanup_re != null
                 ? regex_replace_or ((!)cleanup_re, r.display_name, "", r.display_name).down ().strip ()
                 : r.display_name.down ().strip ();
             if (result_clean == clean_title)
-                score += 80.0;
+                score += 90.0;
             else if (result_clean.contains (clean_title) || clean_title.contains (result_clean))
-                score += 40.0;
+                score += 45.0;
 
             bool result_is_remix = r.display_name.down ().contains ("remix");
             bool result_is_mixed = r.display_name.down ().contains ("mixed");
@@ -88,11 +88,11 @@ namespace G4 {
 
             var result_artist_lower = r.display_artist.down ();
             if (result_artist_lower.contains (clean_artist)) {
-                score += 50.0;
+                score += 60.0;
             } else {
                 foreach (var word in clean_artist.split (" ")) {
                     if (word.length > 2 && result_artist_lower.contains (word)) {
-                        score += 25.0;
+                        score += 30.0;
                         break;
                     }
                 }
@@ -148,7 +148,6 @@ namespace G4 {
                 }
             });
         } catch (Error e) {
-            lyrics_log ("PaxSenix: iTunes search parse error: %s".printf (e.message));
         }
         return results;
     }
@@ -187,7 +186,6 @@ namespace G4 {
                 }
             });
         } catch (Error e) {
-            lyrics_log ("PaxSenix: Spotify search parse error: %s".printf (e.message));
         }
         return results;
     }
@@ -209,66 +207,38 @@ namespace G4 {
 
             if (obj.has_member ("ttmlContent")) {
                 var ttml = obj.get_string_member ("ttmlContent");
-                if (ttml.length > 0) {
-                    if (lyrics_debug_enabled) {
-                        int ttml_log_len = ttml.length > 3000 ? 3000 : ttml.length;
-                        lyrics_log ("PaxSenix: ttmlContent (first %d chars):\n%s".printf (ttml_log_len, ttml.substring (0, ttml_log_len)));
-                    }
-                    lyrics_log ("PaxSenix: using ttmlContent");
-                    return ttml;
-                }
+                if (ttml.length > 0) return ttml;
             }
-
             if (obj.has_member ("elrcMultiPerson")) {
                 var elrc = obj.get_string_member ("elrcMultiPerson");
-                if (elrc.length > 0) {
-                    lyrics_log ("PaxSenix: using elrcMultiPerson");
-                    return elrc;
-                }
+                if (elrc.length > 0) return elrc;
             }
-
             if (obj.has_member ("elrc")) {
                 var elrc = obj.get_string_member ("elrc");
-                if (elrc.length > 0) {
-                    lyrics_log ("PaxSenix: using elrc");
-                    return elrc;
-                }
+                if (elrc.length > 0) return elrc;
             }
-
             if (obj.has_member ("lrc")) {
                 var lrc = obj.get_string_member ("lrc");
-                if (lrc.length > 0) {
-                    lyrics_log ("PaxSenix: using lrc");
-                    return lrc;
-                }
+                if (lrc.length > 0) return lrc;
             }
-
             if (obj.has_member ("plain")) {
                 var plain = obj.get_string_member ("plain");
-                if (plain.length > 0) {
-                    lyrics_log ("PaxSenix: using plain fallback");
-                    return plain;
-                }
+                if (plain.length > 0) return plain;
             }
-
             return null;
         } catch (Error e) {
-            lyrics_log ("PaxSenix fetch_track parse error: %s".printf (e.message));
             return null;
         }
     }
 
     public async LyricsCandidate? provider_fetch_paxsenix (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-paxsenix-enabled")) {
-            lyrics_log ("PaxSenix: disabled");
+            lyrics_log ("PaxSenix: disable");
             return null;
         }
 
         var clean_title  = paxsenix_clean_title (music.title);
         var clean_artist = paxsenix_clean_artist (music.artist);
-
-        lyrics_log ("PaxSenix: title='%s' artist='%s' dur=%dms".printf (
-            clean_title, clean_artist, duration_ms));
 
         string[] queries = {
             "%s %s".printf (clean_title, clean_artist)
@@ -276,40 +246,32 @@ namespace G4 {
         if (music.album.length > 0)
             queries += "%s %s %s".printf (clean_title, clean_artist, music.album);
 
-        // ── Try iTunes Search first (gets Apple Music track IDs) ──
         PaxSenixResult[] scored = {};
         foreach (var query in queries) {
             if (scored.length > 0) break;
-            lyrics_log ("PaxSenix: searching iTunes '%s'".printf (query));
             var raw_results = yield paxsenix_search_itunes (query, cancellable);
             if (raw_results.length > 0)
                 scored = paxsenix_score (raw_results, music.title, music.artist, duration_ms);
         }
 
-        // ── Fall back to Spotify search if iTunes returned nothing ──
         if (scored.length == 0) {
             foreach (var query in queries) {
                 if (scored.length > 0) break;
-                lyrics_log ("PaxSenix: searching Spotify '%s'".printf (query));
                 var raw_results = yield paxsenix_search_spotify (query, cancellable);
                 if (raw_results.length > 0)
                     scored = paxsenix_score (raw_results, music.title, music.artist, duration_ms);
             }
         }
 
-        if (scored.length == 0) {
-            lyrics_log ("PaxSenix: no search results");
+        if (scored.length == 0)
             return null;
-        }
-
-        lyrics_log ("PaxSenix: %d scored results, trying top 3".printf (scored.length));
 
         string? plain_fallback = null;
+        string? best_word_lrc = null;
+        double best_word_match = 0.0;
         var limit = int.min (3, scored.length);
         for (var i = 0; i < limit; i++) {
             var r = scored[i];
-            lyrics_log ("PaxSenix: trying id=%s '%s' by '%s' (score=%.1f)".printf (
-                r.id, r.display_name, r.display_artist, r.score));
             var lrc = yield paxsenix_fetch_track (r.id, cancellable);
             if (lrc == null) continue;
 
@@ -318,20 +280,25 @@ namespace G4 {
                 || (((!)lrc).contains ("<") && ((!)lrc).contains (":") && ((!)lrc).contains (">"));
 
             if (has_word_timing) {
-                lyrics_log ("PaxSenix: word-timed result from '%s'".printf (r.display_name));
-                return lyrics_build_candidate ((!)lrc, "PaxSenix", index);
+                if (best_word_lrc == null || r.score > best_word_match) {
+                    best_word_lrc = lrc;
+                    best_word_match = r.score;
+                }
+                if (r.score >= 150)
+                    return lyrics_build_candidate ((!)lrc, "PaxSenix", index);
+                continue;
             }
 
             if (plain_fallback == null)
                 plain_fallback = lrc;
         }
 
-        if (plain_fallback != null) {
-            lyrics_log ("PaxSenix: no word-timed result, using plain fallback");
-            return lyrics_build_candidate ((!)plain_fallback, "PaxSenix", index);
-        }
+        if (best_word_lrc != null)
+            return lyrics_build_candidate ((!)best_word_lrc, "PaxSenix", index);
 
-        lyrics_log ("PaxSenix: all candidates returned null");
+        if (plain_fallback != null)
+            return lyrics_build_candidate ((!)plain_fallback, "PaxSenix", index);
+
         return null;
     }
 

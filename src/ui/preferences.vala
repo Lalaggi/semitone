@@ -16,7 +16,7 @@ namespace G4 {
         [GtkChild]
         unowned Gtk.Scale scale_slider;
         [GtkChild]
-        unowned Gtk.Switch compact_btn;
+        unowned Gtk.Scale density_slider;
         [GtkChild]
         unowned Gtk.Switch grid_btn;
         [GtkChild]
@@ -77,7 +77,13 @@ namespace G4 {
                 _settings.set_double ("ui-scale", scale);
                 apply_ui_scale (scale);
             });
-            _settings.bind ("compact-playlist", compact_btn, "active", SettingsBindFlags.DEFAULT);
+            density_slider.add_mark (0, Gtk.PositionType.LEFT, _("Compact"));
+            density_slider.add_mark (1, Gtk.PositionType.TOP, _("Normal"));
+            density_slider.add_mark (2, Gtk.PositionType.RIGHT, _("Roomy"));
+            density_slider.set_value (_settings.get_int ("list-density"));
+            density_slider.value_changed.connect (() => {
+                _settings.set_int ("list-density", (int) density_slider.get_value ());
+            });
             _settings.bind ("grid-mode", grid_btn, "active", SettingsBindFlags.DEFAULT);
             _settings.bind ("single-click-activate", single_btn, "active", SettingsBindFlags.DEFAULT);
 

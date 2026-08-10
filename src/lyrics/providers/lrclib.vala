@@ -2,7 +2,7 @@ namespace G4 {
 
     public async LyricsCandidate? provider_fetch_lrclib (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-lrclib-enabled")) {
-            lyrics_log ("LRCLib: disabled");
+            lyrics_log ("LRCLib: disable");
             return null;
         }
 
@@ -35,35 +35,30 @@ namespace G4 {
             if (raw_synced != null) synced_val = (!)raw_synced;
             string? raw_plain = obj.get_string_member ("plainLyrics");
             if (raw_plain != null) plain_val = (!)raw_plain;
-            lyrics_log ("LRCLib search: found %d results, first match instrumental=%s".printf (
-                (int) arr.get_length (), instrumental.to_string ()));
             return lyrics_build_lrclib_candidate (synced_val, plain_val, instrumental, index);
         } catch (Error e) {
-            lyrics_log ("LRCLib parse error: %s".printf (e.message));
             return null;
         }
     }
 
     private LyricsCandidate? lyrics_build_lrclib_candidate (string synced, string plain, bool instrumental, int index) {
         if (instrumental) {
-            LyricsCandidate c = { "[instrumental]", "LRCLib", {}, false, 0 };
+            LyricsCandidate c = { "[instrumental]", "LRCLib", {}, false, 0, LyricsFormat.PLAIN };
             return c;
         }
         if (synced.length > 0) {
             var parsed = parse_lrc (synced);
             if (parsed.length > 0) {
-                var score = lyrics_score_candidate (parsed, true, synced, index, "LRCLib");
-                lyrics_log ("LRCLib synced: %d lines, score=%.1f".printf (parsed.length, score));
-                LyricsCandidate c = { synced, "LRCLib", parsed, true, score };
+                var score = lyrics_score_candidate (parsed, LyricsFormat.LRC, index, "LRCLib");
+                LyricsCandidate c = { synced, "LRCLib", parsed, true, score, LyricsFormat.LRC };
                 return c;
             }
         }
         if (plain.length > 0) {
             var parsed = parse_plain (plain);
             if (parsed.length > 0) {
-                var score = lyrics_score_candidate (parsed, false, plain, index, "LRCLib");
-                lyrics_log ("LRCLib plain: %d lines, score=%.1f".printf (parsed.length, score));
-                LyricsCandidate c = { plain, "LRCLib", parsed, false, score };
+                var score = lyrics_score_candidate (parsed, LyricsFormat.PLAIN, index, "LRCLib");
+                LyricsCandidate c = { plain, "LRCLib", parsed, false, score, LyricsFormat.PLAIN };
                 return c;
             }
         }

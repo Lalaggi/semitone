@@ -123,11 +123,15 @@ namespace G4 {
     }
 
     public class MusicEntry : MusicWidget {
-        public MusicEntry (bool compact = true) {
+        public MusicEntry (int density = 1) {
             width_request = 324;
 
-            var cover_margin = compact ? 3 : 4;
-            var cover_size = compact ? 36 : 48;
+            var cover_margin = density >= 2 ? 6 : (density == 1 ? 4 : 3);
+            var cover_size = density >= 2 ? 56 : (density == 1 ? 48 : 36);
+            var vbox_spacing = density >= 2 ? 8 : (density == 1 ? 6 : 2);
+            margin_top = density >= 2 ? 10 : (density == 1 ? 6 : 0);
+            margin_bottom = density >= 2 ? 10 : (density == 1 ? 6 : 0);
+
             _image.margin_top = cover_margin;
             _image.margin_bottom = cover_margin;
             _image.margin_start = 4;
@@ -136,8 +140,7 @@ namespace G4 {
             _paintable.queue_draw.connect (_image.queue_draw);
             append (_image);
 
-            var spacing = compact ? 2 : 6;
-            var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, spacing);
+            var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, vbox_spacing);
             vbox.hexpand = true;
             vbox.valign = Gtk.Align.CENTER;
             vbox.margin_start = 12;

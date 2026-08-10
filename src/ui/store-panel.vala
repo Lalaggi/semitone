@@ -296,7 +296,7 @@ namespace G4 {
         }
 
         private void bind_music_list_properties (MusicList list, bool editable = false) {
-            _app.settings.bind ("compact-playlist", list, "compact-list", SettingsBindFlags.DEFAULT);
+            _app.settings.bind ("list-density", list, "density", SettingsBindFlags.DEFAULT);
             _app.settings.bind ("single-click-activate", list, "single-click-activate", SettingsBindFlags.DEFAULT);
             if (list.item_type != typeof (Music))
                 _app.settings.bind ("grid-mode", list, "grid-mode", SettingsBindFlags.DEFAULT);

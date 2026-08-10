@@ -1,39 +1,48 @@
 namespace G4 {
 
-    public double lyrics_score_candidate (LyricLine[] lines, bool is_synced, string raw, int provider_index, string provider_name) {
-        double provider_bonus = 0.0;
-        if (provider_name == "PaxSenix")
-            provider_bonus = 16.0;
-        else if (provider_name == "SimpMusic")
-            provider_bonus = 15.0;
-        else if (provider_name == "BetterLyrics")
-            provider_bonus = 14.0;
-        else if (provider_name == "LRCLib")
-            provider_bonus = 13.0;
-        else if (provider_name == "NetEase")
-            provider_bonus = 5.0;
-        else if (provider_name == "Musixmatch")
-            provider_bonus = 3.0;
-
-        double format_score = 0.0;
-        if (is_synced) {
-            if (raw.contains ("<tt") || raw.contains ("<body"))
-                format_score = 40.0;
-            else if (lines.length > 0 && lines[0].words.length > 0)
-                format_score = 40.0;
-            else
-                format_score = 20.0;
+    public double lyrics_score_candidate (LyricLine[] lines, LyricsFormat format, int provider_index, string provider_name) {
+        double quality_score = 0.0;
+        switch (format) {
+            case LyricsFormat.TTML_WORD_SYNCED:
+            case LyricsFormat.LRC_PLUS:
+            case LyricsFormat.EXTENDED_LRC:
+                quality_score = 50.0;
+                break;
+            case LyricsFormat.TTML_LINE_SYNCED:
+            case LyricsFormat.LRC:
+                quality_score = 30.0;
+                break;
+            case LyricsFormat.PLAIN:
+            case LyricsFormat.TTML_UNSYNCED:
+                quality_score = 10.0;
+                break;
         }
 
         int non_empty = 0;
         foreach (var l in lines)
             if (l.text.strip ().length > 0) non_empty++;
         double completion = lines.length > 0 ? (double) non_empty / lines.length : 0.0;
-        double completion_score = completion * 10.0;
+        double completion_score = completion * 20.0;
 
-        double order_score = -(provider_index * 0.1);
+        bool synced = format != LyricsFormat.PLAIN && format != LyricsFormat.TTML_UNSYNCED;
+        double synced_pref = 0.0;
+        var app = (Application) GLib.Application.get_default ();
+        if (app.settings.get_boolean ("lyrics-prefer-synced"))
+            synced_pref = synced ? 6.0 : -6.0;
 
-        return provider_bonus + format_score + completion_score + order_score;
+        double order_score = GLib.Math.fmax (0.0, (10.0 - provider_index) * 1.5);
+
+        double trust_bonus = 0.0;
+        if (provider_name == "BetterLyrics" || provider_name == "SimpMusic")
+            trust_bonus = 4.0;
+        else if (provider_name == "LRCLib")
+            trust_bonus = 3.0;
+        else if (provider_name == "LyricsPlus" || provider_name == "NetEase")
+            trust_bonus = 2.0;
+        else if (provider_name == "PaxSenix")
+            trust_bonus = 1.0;
+
+        return quality_score + completion_score + synced_pref + order_score + trust_bonus;
     }
 
     public class LyricsEngine : Object {
@@ -52,11 +61,8 @@ namespace G4 {
                 is_best = true;
             }
 
-            if (is_best) {
-                lyrics_log ("New best candidate: %s (score=%.1f)".printf (c.provider, c.score));
-                if (_timeout_triggered) {
-                    candidate_available (c);
-                }
+            if (is_best && _timeout_triggered) {
+                candidate_available (c);
             }
         }
 
@@ -64,14 +70,11 @@ namespace G4 {
             if (_timeout_triggered) return;
             _timeout_triggered = true;
 
-            lyrics_log ("=== PROVIDER TIMEOUT (%dms) ===".printf (PROVIDER_TIMEOUT_MS));
+            lyrics_log ("=== TIMEOUT (%dms) ===".printf (PROVIDER_TIMEOUT_MS));
             if (_best_candidate != null) {
                 var b = (!)_best_candidate;
-                lyrics_log ("Using best so far: %s (score=%.1f, %d lines)".printf (
-                    b.provider, b.score, b.lines.length));
+                lyrics_log ("Winner: %s (%.1f)".printf (b.provider, b.score));
                 candidate_available (b);
-            } else {
-                lyrics_log ("No candidates yet, waiting...");
             }
         }
 
@@ -94,25 +97,32 @@ namespace G4 {
                 return GLib.Source.REMOVE;
             });
 
+            bool auto_select = settings.get_boolean ("lyrics-auto-select");
+
             for (int pi = 0; pi < provider_order.length; pi++) {
-                if (cancellable != null && ((!)cancellable).is_cancelled ()) {
-                    lyrics_log ("load_lyrics: cancelled, stopping provider loop");
-                    break;
-                }
+                if (cancellable != null && ((!)cancellable).is_cancelled ()) break;
                 var pid = provider_order[pi].strip ();
-                lyrics_log ("Trying %s...".printf (pid));
 
                 try {
                     var candidate = yield lyrics_fetch_provider (pid, music, duration_ms, settings, pi, cancellable);
                     if (cancellable != null && ((!)cancellable).is_cancelled ()) break;
                     if (candidate != null) {
                         var c = (!)candidate;
-                        lyrics_log ("%s: %d lines synced=%s, score=%.1f".printf (
-                            c.provider, c.lines.length, c.is_synced.to_string (), c.score));
+                        if (!auto_select) {
+                            if (!_timeout_triggered)
+                                Source.remove (timeout_id);
+                            _best_candidate = null;
+                            _best_candidate_score = 0.0;
+                            return c;
+                        }
+                        lyrics_log ("%s: Score=%.1f | Synced=%s | Source=%s".printf (
+                            c.provider, c.score,
+                            lyrics_format_synced (c.format),
+                            lyrics_format_source (c.format)));
                         process_candidate (c);
                     }
                 } catch (Error e) {
-                    lyrics_log ("Provider %s error: %s".printf (pid, e.message));
+                    lyrics_log ("%s: error: %s".printf (pid, e.message));
                 }
             }
 

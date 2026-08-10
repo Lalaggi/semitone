@@ -9,9 +9,8 @@ namespace G4 {
     public class MusicList : Gtk.Box {
         protected Application _app;
         private HashTable<Music, Gtk.ListItem> _binding_items = new HashTable<Music, Gtk.ListItem> (direct_hash, direct_equal);
-        private bool _compact_list = false;
-        private Music? _current_node = null;
-        private ListStore _data_store = new ListStore (typeof (Music));
+        private int _density = 1;
+        private Music? _current_node = null;        private ListStore _data_store = new ListStore (typeof (Music));
         private bool _editable = false;
         private Gtk.FilterListModel _filter_model = new Gtk.FilterListModel (null, null);
         private bool _grid_mode = false;
@@ -70,13 +69,13 @@ namespace G4 {
             }
         }
 
-        public bool compact_list {
+        public int density {
             get {
-                return _compact_list;
+                return _density;
             }
             set {
-                if (_compact_list != value) {
-                    _compact_list = value;
+                if (_density != value) {
+                    _density = value;
                     create_factory ();
                 }
             }
@@ -428,7 +427,7 @@ namespace G4 {
         }
 
         private void on_create_item (Object obj) {
-            var child = _grid_mode ? (MusicWidget) new MusicCell () : (MusicWidget) new MusicEntry (_compact_list);
+            var child = _grid_mode ? (MusicWidget) new MusicCell () : (MusicWidget) new MusicEntry (_density);
             var item = (Gtk.ListItem) obj;
             item.child = child;
             item.selectable = _multi_selection || !_single_click_activate;

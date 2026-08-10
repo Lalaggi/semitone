@@ -2,7 +2,7 @@ namespace G4 {
 
     public async LyricsCandidate? provider_fetch_lyricsplus (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-lyricsplus-enabled")) {
-            lyrics_log ("LyricsPlus: disabled");
+            lyrics_log ("LyricsPlus: disable");
             return null;
         }
 
@@ -18,23 +18,18 @@ namespace G4 {
                 Uri.escape_string (music.title, null, false),
                 Uri.escape_string (music.artist, null, false),
                 duration_sec);
-            if (music.album.length > 0) {
+            if (music.album.length > 0)
                 url += "&album=%s".printf (Uri.escape_string (music.album, null, false));
-            }
             for (var attempt = 0; attempt < 3; attempt++) {
-                lyrics_log ("LyricsPlus: trying %s (attempt %d)".printf (base_url, attempt + 1));
                 var body = yield lyrics_http_get_with_headers_allow_4xx (url, { { "User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" } }, cancellable);
                 if (body == null) break;
                 var raw = (!)body;
                 if (raw.contains ("error code: 1027")) {
-                    lyrics_log ("LyricsPlus: rate limited (1027), retrying...");
                     yield sleep_ms (1000 * (attempt + 1));
                     continue;
                 }
-                if (raw.contains ("error code: 1033")) {
-                    lyrics_log ("LyricsPlus: tunnel error (1033), skipping endpoint");
+                if (raw.contains ("error code: 1033"))
                     break;
-                }
                 if (raw.length > 0) {
                     try {
                         var parser = new Json.Parser ();
@@ -46,14 +41,12 @@ namespace G4 {
                             if (obj.has_member ("lyrics")) {
                                 var lyrics_arr = obj.get_array_member ("lyrics");
                                 if (lyrics_arr != null && ((!)lyrics_arr).get_length () > 0) {
-                                    lyrics_log ("LyricsPlus: got lyrics from %s, type=%s".printf (base_url, type));
                                     result = convert_richsync_json ((!)lyrics_arr, type);
                                     break;
                                 }
                             }
                         }
                     } catch (Error e) {
-                        lyrics_log ("LyricsPlus: parse error from %s: %s".printf (base_url, e.message));
                     }
                 }
                 break;
