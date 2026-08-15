@@ -20,7 +20,7 @@ namespace G4 {
     };
 
     public const string DEFAULT_PROVIDER_ORDER =
-        "betterlyrics,simpmusic,musicbrainz,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch";
+        "betterlyrics,musicbrainz,lrclib,netease,paxsenix,simpmusic,lyricsplus,megalobiz";
 
     public async LyricsCandidate? lyrics_fetch_provider (string id, Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         switch (id) {
