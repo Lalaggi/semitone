@@ -266,11 +266,15 @@ namespace G4 {
         if (scored.length == 0)
             return null;
 
-        string? plain_fallback = null;
         string? best_word_lrc = null;
         double best_word_match = 0.0;
-        var limit = int.min (3, scored.length);
-        for (var i = 0; i < limit; i++) {
+        string? best_line_lrc = null;
+        double best_line_match = 0.0;
+        // Inspect ALL returned candidates (iTunes caps the search at limit=5), not
+        // just the top 3, so a word-synced match that ranks 4th/5th is not missed
+        // (common for niche artists with multiple same-named acts). The confident
+        // early-return below keeps the common path at a single fetch.
+        for (var i = 0; i < scored.length; i++) {
             var r = scored[i];
             var lrc = yield paxsenix_fetch_track (r.id, cancellable);
             if (lrc == null) continue;
@@ -289,15 +293,17 @@ namespace G4 {
                 continue;
             }
 
-            if (plain_fallback == null)
-                plain_fallback = lrc;
+            if (best_line_lrc == null || r.score > best_line_match) {
+                best_line_lrc = lrc;
+                best_line_match = r.score;
+            }
         }
 
         if (best_word_lrc != null)
             return lyrics_build_candidate ((!)best_word_lrc, "PaxSenix", index);
 
-        if (plain_fallback != null)
-            return lyrics_build_candidate ((!)plain_fallback, "PaxSenix", index);
+        if (best_line_lrc != null)
+            return lyrics_build_candidate ((!)best_line_lrc, "PaxSenix", index);
 
         return null;
     }
