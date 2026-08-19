@@ -5,7 +5,7 @@ namespace G4 {
         private PeakBar _peak = new PeakBar ();
         private Gtk.Label _positive = new Gtk.Label ("0:00");
         private Gtk.Label _negative = new Gtk.Label ("0:00");
-        private Gtk.ToggleButton _repeat = new Gtk.ToggleButton ();
+        private Gtk.Button _repeat = new Gtk.Button ();
         private Gtk.Button _prev = new Gtk.Button ();
         private Gtk.Button _play = new Gtk.Button ();
         private Gtk.Button _next = new Gtk.Button ();
@@ -59,22 +59,34 @@ namespace G4 {
             var buttons = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 16);
             buttons.halign = Gtk.Align.CENTER;
             buttons.margin_top = 16;
+
+            var sleep_btn = new Gtk.MenuButton ();
+            sleep_btn.icon_name = "alarm-symbolic";
+            sleep_btn.tooltip_text = _("Sleep Timer");
+            sleep_btn.add_css_class ("flat");
+            sleep_btn.valign = Gtk.Align.CENTER;
+            sleep_btn.opacity = 0.5;
+            setup_sleep_popover (sleep_btn, app);
+
             buttons.append (_repeat);
             buttons.append (_prev);
             buttons.append (_play);
             buttons.append (_next);
-            buttons.append (_volume);
+            buttons.append (sleep_btn);
             append (buttons);
 
             _repeat.icon_name = "media-playlist-repeat-symbolic";
             _repeat.valign = Gtk.Align.CENTER;
-            /* Translators: single loop the current music */
-            _repeat.tooltip_text = _("Single Loop");
+            _repeat.tooltip_text = _("No Repeat");
             _repeat.add_css_class ("flat");
-            _repeat.toggled.connect (() => {
-                _repeat.icon_name = _repeat.active ? "media-playlist-repeat-song-symbolic" : "media-playlist-repeat-symbolic";
-                app.single_loop = ! app.single_loop;
+            _repeat.opacity = 0.5;
+            _repeat.clicked.connect (() => {
+                var mode = (app.repeat_mode + 1) % 3;
+                app.repeat_mode = mode;
+                update_repeat_button (mode);
             });
+
+            update_repeat_button (app.repeat_mode);
 
             _prev.valign = Gtk.Align.CENTER;
             _prev.action_name = ACTION_APP + ACTION_PREV;
@@ -84,7 +96,7 @@ namespace G4 {
 
             _play.valign = Gtk.Align.CENTER;
             _play.action_name = ACTION_APP + ACTION_PLAY_PAUSE;
-            _play.icon_name = "media-playback-start-symbolic"; // media-playback-pause-symbolic
+            _play.icon_name = "media-playback-start-symbolic";
             _play.tooltip_text = _("Play/Pause");
             _play.add_css_class ("circular");
             _play.set_size_request (48, 48);
@@ -106,6 +118,12 @@ namespace G4 {
             settings.bind ("show-peak", _peak, "visible", SettingsBindFlags.DEFAULT);
             settings.bind ("peak-characters", _peak, "characters", SettingsBindFlags.DEFAULT);
             settings.bind ("remain-progress", this, "remain-progress", SettingsBindFlags.DEFAULT);
+        }
+
+        public VolumeButton volume_button {
+            get {
+                return _volume;
+            }
         }
 
         public double peak {
@@ -154,6 +172,26 @@ namespace G4 {
             _play.icon_name = playing ? "media-playback-pause-symbolic" : "media-playback-start-symbolic";
         }
 
+        private void update_repeat_button (uint mode) {
+            switch (mode) {
+                case RepeatMode.NONE:
+                    _repeat.icon_name = "media-playlist-repeat-symbolic";
+                    _repeat.tooltip_text = _("No Repeat");
+                    _repeat.opacity = 0.5;
+                    break;
+                case RepeatMode.ALL:
+                    _repeat.icon_name = "media-playlist-repeat-symbolic";
+                    _repeat.tooltip_text = _("Repeat All");
+                    _repeat.opacity = 1.0;
+                    break;
+                case RepeatMode.ONE:
+                    _repeat.icon_name = "media-playlist-repeat-song-symbolic";
+                    _repeat.tooltip_text = _("Repeat One");
+                    _repeat.opacity = 1.0;
+                    break;
+            }
+        }
+
         private void setup_seek_bar (GstPlayer player) {
             _seek.change_value.connect ((type, value) => {
                 if (_seeking) {
@@ -164,8 +202,6 @@ namespace G4 {
                 return false;
             });
 
-            // Hack that grabs the click gesture controller as mouse released event doesn't work otherwise
-            // Bug: https://gitlab.gnome.org/GNOME/gtk/-/issues/4939
             Gtk.GestureClick? click_gesture = null;
             var controllers = _seek.observe_controllers ();
             for (var i = 0; i < controllers.get_n_items (); i++) {
@@ -204,6 +240,134 @@ namespace G4 {
                     _negative.label = "-" + format_time (_duration - _position);
             }
             _seek.set_value (value);
+        }
+
+        private void setup_sleep_popover (Gtk.MenuButton btn, Application app) {
+            var timer = (!)app.sleep_timer;
+
+            var popover = new Gtk.Popover ();
+            popover.has_arrow = true;
+            btn.popover = popover;
+
+            var setup_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+            setup_box.margin_top = 12;
+            setup_box.margin_bottom = 12;
+            setup_box.margin_start = 16;
+            setup_box.margin_end = 16;
+
+            var counter_box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            counter_box.halign = Gtk.Align.CENTER;
+
+            var minus_btn = new Gtk.Button.from_icon_name ("list-remove-symbolic");
+            minus_btn.add_css_class ("circular");
+            minus_btn.add_css_class ("flat");
+
+            var value_label = new Gtk.Label ("15");
+            value_label.add_css_class ("title-2");
+            value_label.width_chars = 3;
+            value_label.halign = Gtk.Align.CENTER;
+
+            var plus_btn = new Gtk.Button.from_icon_name ("list-add-symbolic");
+            plus_btn.add_css_class ("circular");
+            plus_btn.add_css_class ("flat");
+
+            counter_box.append (minus_btn);
+            counter_box.append (value_label);
+            counter_box.append (plus_btn);
+            setup_box.append (counter_box);
+
+            var unit_label = new Gtk.Label (_("minutes"));
+            unit_label.add_css_class ("dim-label");
+            unit_label.halign = Gtk.Align.CENTER;
+            setup_box.append (unit_label);
+
+            var finish_check = new Gtk.CheckButton.with_label (_("Finish current track"));
+            finish_check.halign = Gtk.Align.CENTER;
+            setup_box.append (finish_check);
+
+            var start_btn = new Gtk.Button.with_label (_("Start"));
+            start_btn.add_css_class ("suggested-action");
+            start_btn.add_css_class ("pill");
+            start_btn.halign = Gtk.Align.CENTER;
+            setup_box.append (start_btn);
+
+            var active_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 12);
+            active_box.margin_top = 12;
+            active_box.margin_bottom = 12;
+            active_box.margin_start = 16;
+            active_box.margin_end = 16;
+
+            var countdown_label = new Gtk.Label ("15:00");
+            countdown_label.add_css_class ("title-1");
+            countdown_label.halign = Gtk.Align.CENTER;
+            active_box.append (countdown_label);
+
+            var active_btns = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8);
+            active_btns.halign = Gtk.Align.CENTER;
+
+            var stop_btn = new Gtk.Button.from_icon_name ("media-playback-stop-symbolic");
+            stop_btn.add_css_class ("circular");
+            stop_btn.add_css_class ("destructive-action");
+            stop_btn.tooltip_text = _("Stop Timer");
+
+            var add_btn = new Gtk.Button.with_label ("+1 min");
+            add_btn.add_css_class ("pill");
+
+            active_btns.append (stop_btn);
+            active_btns.append (add_btn);
+            active_box.append (active_btns);
+
+            var stack = new Gtk.Stack ();
+            stack.add_named (setup_box, "setup");
+            stack.add_named (active_box, "active");
+            popover.child = stack;
+
+            var minutes = 15;
+            minus_btn.clicked.connect (() => {
+                minutes = int.max (1, minutes - 1);
+                value_label.label = minutes.to_string ();
+            });
+            plus_btn.clicked.connect (() => {
+                minutes = int.min (180, minutes + 1);
+                value_label.label = minutes.to_string ();
+            });
+
+            start_btn.clicked.connect (() => {
+                timer.finish_track = finish_check.active;
+                timer.start (minutes * 60);
+                stack.visible_child_name = "active";
+            });
+
+            stop_btn.clicked.connect (() => {
+                timer.stop ();
+                stack.visible_child_name = "setup";
+            });
+
+            add_btn.clicked.connect (() => {
+                timer.add_seconds (60);
+            });
+
+            timer.tick.connect ((secs) => {
+                var m = secs / 60;
+                var s = secs % 60;
+                countdown_label.label = "%d:%02d".printf (m, s);
+            });
+
+            timer.state_changed.connect ((active) => {
+                btn.opacity = active ? 1.0 : 0.5;
+                stack.visible_child_name = active ? "active" : "setup";
+                if (!active)
+                    popover.popdown ();
+            });
+
+            popover.show.connect (() => {
+                stack.visible_child_name = timer.active ? "active" : "setup";
+                if (timer.active) {
+                    var m = timer.seconds_remaining / 60;
+                    var s = timer.seconds_remaining % 60;
+                    countdown_label.label = "%d:%02d".printf (m, s);
+                }
+            });
         }
     }
 

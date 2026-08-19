@@ -125,6 +125,7 @@ namespace G4 {
                     dos.write_uint64 (child.time);
                 }
                 dos.write_to (fos);
+                fos.close ();
             } catch (Error e) {
                 print ("Save dir error: %s\n", e.message);
             }

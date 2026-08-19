@@ -5,6 +5,8 @@
     <property name="default-width">480</property>
     <child>
       <object class="AdwPreferencesPage">
+        <property name="title" translatable="yes">General</property>
+        <property name="icon-name">preferences-system-symbolic</property>
         <child>
           <object class="AdwPreferencesGroup">
             <property name="title" translatable="yes">General</property>
@@ -17,11 +19,82 @@
             <child>
               <object class="AdwActionRow">
                 <property name="icon-name">view-list-symbolic</property>
-                <property name="title" translatable="yes">Compact playlist view</property>
-                <property name="activatable_widget">compact_btn</property>
-                <child>
-                  <object class="GtkSwitch" id="compact_btn">
+                <property name="title" translatable="yes">List density</property>
+                <property name="subtitle" translatable="yes">Compact, normal or roomy song lists</property>
+                <child type="suffix">
+                  <object class="GtkScale" id="density_slider">
                     <property name="valign">center</property>
+                    <property name="width-request">160</property>
+                    <property name="draw-value">false</property>
+                    <property name="digits">0</property>
+                    <property name="adjustment">
+                      <object class="GtkAdjustment" id="density_adjustment">
+                        <property name="lower">0</property>
+                        <property name="upper">2</property>
+                        <property name="step-increment">1</property>
+                        <property name="page-increment">1</property>
+                        <property name="value">1</property>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow" id="scale_row">
+                <property name="icon-name">zoom-fit-best-symbolic</property>
+                <property name="title" translatable="yes">Interface scale</property>
+                <property name="subtitle" translatable="yes">Adjust the size of the UI independently of system scaling</property>
+                <child type="suffix">
+                  <object class="GtkBox">
+                    <property name="valign">center</property>
+                    <property name="spacing">8</property>
+                    <child>
+                      <object class="GtkScale" id="scale_slider">
+                        <property name="valign">center</property>
+                        <property name="width-request">160</property>
+                        <property name="draw-value">true</property>
+                        <property name="value-pos">right</property>
+                        <property name="digits">2</property>
+                        <property name="adjustment">
+                          <object class="GtkAdjustment" id="scale_adjustment">
+                            <property name="lower">0.5</property>
+                            <property name="upper">2.0</property>
+                            <property name="step-increment">0.05</property>
+                            <property name="page-increment">0.1</property>
+                            <property name="value">1.0</property>
+                          </object>
+                        </property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow">
+                <property name="icon-name">text-css-symbolic</property>
+                <property name="title" translatable="yes">Custom stylesheet</property>
+                <property name="subtitle" translatable="yes">Can break the app and is difficult to undo. Back up settings first.</property>
+                <child>
+                  <object class="GtkBox">
+                    <property name="valign">center</property>
+                    <property name="spacing">6</property>
+                    <child>
+                      <object class="GtkButton" id="css_file_btn">
+                        <property name="valign">center</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkButton" id="css_reset_btn">
+                        <property name="valign">center</property>
+                        <property name="icon-name">edit-clear-symbolic</property>
+                        <property name="tooltip-text" translatable="yes">Clear custom stylesheet</property>
+                        <style>
+                          <class name="flat"/>
+                        </style>
+                      </object>
+                    </child>
                   </object>
                 </child>
               </object>
@@ -38,7 +111,7 @@
                 </child>
               </object>
             </child>
-             <child>
+            <child>
               <object class="AdwActionRow">
                 <property name="icon-name">input-mouse-symbolic</property>
                 <property name="title" translatable="yes">Single click to activate item</property>
@@ -66,7 +139,7 @@
         </child>
         <child>
           <object class="AdwPreferencesGroup">
-          <property name="title" translatable="yes">Library</property>
+            <property name="title" translatable="yes">Library</property>
             <child>
               <object class="AdwActionRow">
                 <property name="icon-name">folder-symbolic</property>
@@ -108,12 +181,12 @@
         </child>
         <child>
           <object class="AdwPreferencesGroup">
-          <property name="title" translatable="yes">Playback</property>
+            <property name="title" translatable="yes">Playback</property>
             <child>
               <object class="AdwExpanderRow" id="peak_row">
                 <property name="icon-name">edit-select-symbolic</property>
                 <property name="title" translatable="yes">Show audio peak level</property>
-              	<property name="show-enable-switch">true</property>
+                <property name="show-enable-switch">true</property>
                 <child>
                   <object class="AdwActionRow">
                     <property name="title" translatable="yes">Display characters</property>
@@ -140,18 +213,7 @@
                 </child>
               </object>
             </child>
-            <child>
-              <object class="AdwActionRow">
-                <property name="icon-name">media-playlist-repeat-symbolic</property>
-                <property name="title" translatable="yes">Enable gapless playback</property>
-                <property name="activatable_widget">gapless_btn</property>
-                <child>
-                  <object class="GtkSwitch" id="gapless_btn">
-                    <property name="valign">center</property>
-                  </object>
-                </child>
-              </object>
-            </child>
+
             <child>
               <object class="AdwComboRow" id="replaygain_row">
                 <property name="icon-name">audio-volume-high-symbolic</property>
@@ -159,9 +221,125 @@
               </object>
             </child>
             <child>
+              <object class="AdwExpanderRow" id="eq_row">
+                <property name="icon-name">audio-equalizer-symbolic</property>
+                <property name="title" translatable="yes">Graphic equalizer</property>
+                <property name="show-enable-switch">true</property>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Bands (dB)</property>
+                    <child>
+                      <object class="GtkBox" id="eq_box">
+                        <property name="valign">center</property>
+                        <property name="homogeneous">true</property>
+                        <property name="spacing">6</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
               <object class="AdwComboRow" id="audiosink_row">
                 <property name="icon-name">audio-card-symbolic</property>
                 <property name="title" translatable="yes">Prefer audio sink of GStreamer</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="AdwPreferencesPage">
+        <property name="title" translatable="yes">Lyrics</property>
+        <property name="icon-name">text-x-generic-symbolic</property>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title" translatable="yes">Behaviour</property>
+            <child>
+              <object class="AdwActionRow">
+                <property name="icon-name">media-playlist-shuffle-symbolic</property>
+                <property name="title" translatable="yes">Prefer synced lyrics</property>
+                <property name="subtitle" translatable="yes">Always try synced providers first; fall back to plain if none found</property>
+                <property name="activatable_widget">lyrics_prefer_synced_btn</property>
+                <child>
+                  <object class="GtkSwitch" id="lyrics_prefer_synced_btn">
+                    <property name="valign">center</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow">
+                <property name="icon-name">view-sort-ascending-symbolic</property>
+                <property name="title" translatable="yes">Auto-select best lyrics</property>
+                <property name="subtitle" translatable="yes">Pick highest-scoring lyrics; disable to use priority order</property>
+                <property name="activatable_widget">lyrics_auto_select_btn</property>
+                <child>
+                  <object class="GtkSwitch" id="lyrics_auto_select_btn">
+                    <property name="valign">center</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow">
+                <property name="icon-name">view-refresh-symbolic</property>
+                <property name="title" translatable="yes">Allow plain text fallback</property>
+                <property name="subtitle" translatable="yes">If no synced lyrics found, show plain text instead of nothing</property>
+                <property name="activatable_widget">lyrics_plain_fallback_btn</property>
+                <child>
+                  <object class="GtkSwitch" id="lyrics_plain_fallback_btn">
+                    <property name="valign">center</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow">
+                <property name="icon-name">media-seek-forward-symbolic</property>
+                <property name="title" translatable="yes">Auto-scroll resume delay</property>
+                <property name="subtitle" translatable="yes">Milliseconds before auto-scroll resumes after manual scroll (0 to disable)</property>
+                <child>
+                  <object class="GtkSpinButton" id="lyrics_autoscroll_timeout_btn">
+                    <property name="valign">center</property>
+                    <property name="adjustment">
+                      <object class="GtkAdjustment">
+                        <property name="lower">0</property>
+                        <property name="upper">30000</property>
+                        <property name="step-increment">1000</property>
+                        <property name="page-increment">5000</property>
+                        <property name="value">8000</property>
+                      </object>
+                    </property>
+                    <property name="digits">0</property>
+                    <property name="update-policy">if-valid</property>
+                    <property name="width-chars">6</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup" id="lyrics_providers_group">
+            <property name="title" translatable="yes">Providers</property>
+            <property name="description" translatable="yes">Drag to reorder priority. Enable "Auto-select" to let scoring pick the best.</property>
+            <child>
+              <object class="AdwActionRow" id="lyrics_auto_indicator">
+                <property name="title" translatable="yes">Auto mode is ON</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title" translatable="yes">API Keys</property>
+            <property name="description" translatable="yes">Store as plain text in ~/.config/semitone/</property>
+            <child>
+              <object class="AdwActionRow">
+                <property name="title">Musixmatch</property>
+                <property name="subtitle" translatable="yes">musixmatch-api-key</property>
               </object>
             </child>
           </object>

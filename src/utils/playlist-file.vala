@@ -87,7 +87,7 @@ namespace G4 {
                     var abs_uri = parse_relative_uri (uri, parent);
                     if (abs_uri != null)
                         uris.add ((!)abs_uri);
-                } else if (line.ascii_ncasecmp ("X-GNOME-Title", pos) == 0) {
+                } else if (line.has_prefix ("X-GNOME-Title")) {
                     var text = line.substring (pos + 1).strip ();
                     if (text.length > 0)
                         title = text;
@@ -185,8 +185,8 @@ namespace G4 {
     public bool save_playlist_file (File file, GenericArray<string> uris, string? title = null, bool with_titles = true) {
         var bname = file.get_basename () ?? "";
         var pos = bname.last_index_of_char ('.');
-        var name = bname.substring (0, pos);
-        var ext = bname.substring (pos + 1);
+        var name = pos > 0 ? bname.substring (0, pos) : bname;
+        var ext = pos > 0 ? bname.substring (pos + 1) : "";
         try {
             var fos = file.replace (null, false, FileCreateFlags.NONE);
             var bos = new BufferedOutputStream (fos);

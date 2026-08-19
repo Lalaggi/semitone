@@ -31,6 +31,7 @@ namespace G4 {
             set {
                 var count = value.char_count ();
                 _chars = new unichar[count + 1];
+                _char_widths = new int[count + 1];
                 _char_count = 0;
                 _char_height = 0;
                 var next = 0;

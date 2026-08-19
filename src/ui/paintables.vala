@@ -192,7 +192,6 @@ namespace G4 {
             if (_fade > 0) {
                 snapshot.pop ();
             }
-            //  print ("fade: %g\n", _fade);
         }
     }
 

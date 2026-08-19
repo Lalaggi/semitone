@@ -1,54 +1,77 @@
-<img align="left" alt="Project logo" src="data/icons/hicolor/scalable/apps/app.svg" />
+<img align="left" alt="Semitone" src="assets/app.svg" width="128" />
 
-# Gapless
-Play your music elegantly.
+# Semitone
 
-<img src="https://gitlab.gnome.org/neithern/screenshots/-/raw/main/g4music/window.png" width="1134"/>
-<img src="https://gitlab.gnome.org/neithern/screenshots/-/raw/main/g4music/albums.png" width="1134"/>
-<img src="https://gitlab.gnome.org/neithern/screenshots/-/raw/main/g4music/playing.png" width="462"/>
-<img src="https://gitlab.gnome.org/neithern/screenshots/-/raw/main/g4music/playlist.png" width="466"/>
+A lightweight GTK4 music player written in Vala.
 
-Gapless (AKA: G4Music) is a light weight music player written in GTK4, focuses on large music collection.
+**Source:** [gitlab.com/Lalaggi/semitone](https://gitlab.com/Lalaggi/semitone)
 
 ## Features
-- Supports most music file types, Samba and any other remote protocols (depends on GIO and GStreamer).
-- Fast loading and parsing thousands of music files in very few seconds, monitor local changes.
-- Low memory usage for large music collection with album covers (embedded and external), no thumbnail caches to store.
-- Group and sorts by album/artist/title, shuffle list, full-text searching.
-- Fluent adaptive user interface for different screen (Desktop, Tablet, Mobile).
-- Gaussian blurred cover as background, follows GNOME light/dark mode.
-- Supports creating and editing playlists, drag cover to change order or add to another playlist.
-- Supports drag and drop with other apps.
-- Supports audio peaks visualizer.
-- Supports gapless playback.
-- Supports normalizing volume with ReplayGain.
-- Supports specified audio sink.
-- Supports MPRIS control.
 
-## Install from Flathub
-<a href="https://flathub.org/apps/com.github.neithern.g4music">
-<img src="https://flathub.org/assets/badges/flathub-badge-en.png" width="240"/></a>
+- **Playback** — Shuffle and repeat modes, sleep timer, MPRIS media controls, Discord Rich Presence
+- **Library** — Fast scanning of large collections, groups and sorts by album/artist/title, full-text search, file change monitoring
+- **Queue** — Queue viewer with cover art, drag to reorder
+- **Playlists** — Create, edit, and manage playlists, import/export M3U files
+- **Lyrics** — 9 providers (PaxSenix, BetterLyrics, SimpMusic, LyricsPlus, LRCLib, NetEase, Megalobiz, Genius, Musixmatch), synced lyrics with word-by-word highlighting, auto-scroll, click-to-seek, auto-select best match
+- **Visuals** — Gaussian blurred cover art background, follows system light/dark mode, adaptive layout for desktop/tablet/mobile, audio peak visualizer
+- **Audio** — ReplayGain volume normalization (track/album), configurable audio sink
+- **Formats** — Supports most audio formats via GStreamer (MP3, FLAC, OGG, OPUS, M4A, WAV, etc.)
+- **Remote** — Samba and other remote protocols via GIO
 
-## Install from Snapcraft (unofficial)
-<a href="https://snapcraft.io/g4music">
-<img alt="Get it from the Snap Store" src="https://camo.githubusercontent.com/ab077b20ad9938c23fbdac223ab101df5ed27329bbadbe7f98bfd62d5808f0a7/68747470733a2f2f736e617063726166742e696f2f7374617469632f696d616765732f6261646765732f656e2f736e61702d73746f72652d626c61636b2e737667" data-canonical-src="https://snapcraft.io/static/images/badges/en/snap-store-black.svg" width="240" style="max-width: 100%;"> 
+## Dependencies
 
-## FreeBSD Dependencies
-
+**Arch Linux:**
 ```bash
-pkg install vala meson libadwaita gstreamer1-plugins-all gettext gtk4
+sudo pacman -S vala meson gtk4 libadwaita gstreamer gst-plugins-base libsoup3 json-glib libxml2
 ```
 
-## How to build 
-It is written in Vala, simple and clean code, with few third-party dependencies:
+**Debian/Ubuntu:**
+```bash
+sudo apt install vala meson libgtk-4-dev libadwaita-1-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libsoup-3.0-dev libjson-glib-dev libxml2-dev
+```
 
-1. Clone the code from gitlab.
-2. Install vala, develop packages of gtk4, libadwaita, gstreamer.
-3. Run in the project directory:
+**Fedora:**
+```bash
+sudo dnf install vala meson gtk4-devel libadwaita-devel gstreamer1-devel gstreamer1-plugins-base-devel libsoup3-devel json-glib-devel libxml2-devel
+```
 
-    `meson setup build --buildtype=release`
+**OpenSUSE Tumbleweed**
+```bash
+sudo zypper install vala meson gtk4-devel libadwaita-devel gstreamer-devel gstreamer-plugins-base-devel libsoup3-devel json-glib-devel libxml2-devel
+```
 
-    `meson install -C build`
+**Void Linux**
+```bash
+sudo xbps-install vala meson gtk4-devel libadwaita-devel gstreamer1-devel gst-plugins-base1-devel libsoup3-devel json-glib-devel libxml2-devel
+```
 
-## Change Log
-Check the [release tags](https://gitlab.gnome.org/neithern/g4music/-/tags) for change log.
+**Alpine**
+```bash
+sudo apk add vala meson gtk4.0-dev libadwaita-dev gstreamer-dev gst-plugins-base-dev libsoup3-dev json-glib-dev libxml2-dev
+```
+
+## Installation
+
+### Flatpak
+
+Pre-built flatpak packages are available in [flatpak-downloads](https://gitlab.com/Lalaggi/semitone/-/tree/main/flatpak-downloads). May be slightly behind the latest version.
+
+### Recommended: [gitpkg](https://codeberg.org/el1lovescomputers/gitpkg)
+
+```bash
+curl -fsSL "https://codeberg.org/el1lovescomputers/gitpkg/raw/branch/main/install.sh" | sh
+gitpkg install el1lovescomputers/semitone --supplier "codeberg.org"
+```
+
+### From Source
+
+```bash
+git clone https://gitlab.com/Lalaggi/semitone.git
+cd semitone
+meson setup build --buildtype=release --prefix=/usr
+sudo ninja -C build install
+```
+
+## Reporting Issues
+
+https://gitlab.com/Lalaggi/semitone/-/issues

@@ -1,10 +1,14 @@
 project(
-  'g4music', [ 'vala', 'c' ],
-  version: '4.6',
+  'semitone', [ 'vala', 'c' ],
+  version: '1.2.0',
   license: 'GPL3'
 )
 
-app_id = 'com.github.neithern.' + meson.project_name()
+if get_option('prefix') != '/usr'
+  message('WARNING: prefix is ' + get_option('prefix') + ', not /usr. Install target: ' + get_option('prefix') / get_option('bindir') / 'semitone')
+endif
+
+app_id = 'com.github.lalaggi.' + meson.project_name()
 version = meson.project_version()
 
 gnome = import('gnome')
@@ -57,6 +61,10 @@ dependencies = [
   adw_dep,
   libm_dep,
   posix_dep,
+  dependency('libsoup-3.0'),
+  dependency('json-glib-1.0'),
+  dependency('libxml-2.0'),
+  dependency('gio-unix-2.0'),
 ]
 
 subdir('data')
@@ -68,3 +76,4 @@ gnome.post_install(
   gtk_update_icon_cache: true,
   update_desktop_database: true,
 )
+

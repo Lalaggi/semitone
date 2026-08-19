@@ -92,6 +92,7 @@ namespace G4 {
                     });
                     _modified = !dos.write_to (fos);
                 }
+                fos.close ();
             } catch (Error e) {
                 print ("Save tags error: %s\n", e.message);
             }

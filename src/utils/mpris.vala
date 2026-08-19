@@ -7,7 +7,7 @@ namespace G4 {
         private unowned DBusConnection _connection;
         private bool _cover_parsed = false;
         private int64 _current_duration = 0;
-        private unowned Music? _current_music = null;
+        private Music? _current_music = null;
         private HashTable<string, Variant> _metadata = new HashTable<string, Variant> (str_hash, str_equal);
 
         public MprisPlayer (Application app, DBusConnection connection) {
@@ -65,7 +65,8 @@ namespace G4 {
 
         public int64 position {
             get {
-                return (int64) _app.player.position / Gst.USECOND;
+                var pos = _app.player.position;
+                return pos != Gst.CLOCK_TIME_NONE ? (int64) pos / Gst.USECOND : 0;
             }
         }
 
@@ -118,11 +119,15 @@ namespace G4 {
         }
 
         public void seek (int64 offset) throws Error {
-            _app.player.position += offset * Gst.USECOND;
+            var pos = _app.player.position;
+            if (pos == Gst.CLOCK_TIME_NONE) return;
+            var new_pos = (int64) pos + offset * Gst.USECOND;
+            if (new_pos < 0) new_pos = 0;
+            _app.player.position = (Gst.ClockTime) new_pos;
         }
 
         private void on_duration_changed (Gst.ClockTime duration) {
-            var ms = (int64) duration / Gst.USECOND;
+            var ms = duration != Gst.CLOCK_TIME_NONE ? (int64) duration / Gst.USECOND : 0;
             if (_current_duration != ms) {
                 _metadata.insert ("mpris:length", new Variant.int64 (ms));
                 if (_cover_parsed)

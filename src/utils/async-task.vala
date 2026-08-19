@@ -80,6 +80,7 @@ namespace G4 {
             }
             yield;
         } catch (Error e) {
+            warning ("run_async failed: %s", e.message);
         }
         return worker.result;
     }

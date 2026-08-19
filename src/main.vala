@@ -21,10 +21,21 @@ int main (string[] args) {
     Intl.textdomain (Config.CODE_NAME);
 
     Environment.set_prgname (Config.APP_ID);
-    Environment.set_application_name (_("Gapless"));
+    Environment.set_application_name (_("Semitone"));
     fix_gst_tag_encoding ();
 
     Random.set_seed ((uint32) get_monotonic_time ());
+
+    for (var i = 1; i < args.length; i++) {
+        if (args[i] == "-v" || args[i] == "--debug") {
+            G4.lyrics_debug_enabled = true;
+        } else if (args[i] == "--help" || args[i] == "-h") {
+            print ("Usage: %s [OPTIONS]\n", args[0]);
+            print ("  -v, --debug    Enable debug output for lyrics\n");
+            print ("  -h, --help     Show this help message\n");
+            return 0;
+        }
+    }
 
     G4.GstPlayer.init (ref args);
 

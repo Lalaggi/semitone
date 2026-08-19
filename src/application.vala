@@ -1,4 +1,9 @@
 namespace G4 {
+namespace RepeatMode {
+    public const uint NONE = 0;
+    public const uint ALL  = 1;
+    public const uint ONE  = 2;
+}
 
     public class Application : Adw.Application {
         private ActionHandles? _actions = null;
@@ -14,12 +19,15 @@ namespace G4 {
         private MusicLoader _loader = new MusicLoader ();
         private Gtk.FilterListModel _current_list = new Gtk.FilterListModel (null, null);
         private ListStore _music_queue = new ListStore (typeof (Music));
-        private StringBuilder _next_uri = new StringBuilder ();
+        private GenericArray<Music> _queue_original_order = new GenericArray<Music> ();
         private GstPlayer _player = new GstPlayer ();
         private Settings _settings;
         private uint _sort_mode = SortMode.TITLE;
         private bool _store_external_changed = false;
         private Thumbnailer _thumbnailer = new Thumbnailer ();
+        private SleepTimer? _sleep_timer = null;
+        private DiscordRPC? _discord_rpc = null;
+        private Gtk.CssProvider? _custom_css = null;
 
         public signal void index_changed (int index, uint size);
         public signal void music_changed (Music? music);
@@ -52,8 +60,6 @@ namespace G4 {
 
             _player.end_of_stream.connect (on_player_end);
             _player.error.connect (on_player_error);
-            _player.next_uri_request.connect (on_player_next_uri_request);
-            _player.next_uri_start.connect (on_player_next_uri_start);
             _player.state_changed.connect (on_player_state_changed);
             _player.tag_parsed.connect (on_player_tag_parsed);
 
@@ -65,18 +71,39 @@ namespace G4 {
             );
             if (_mpris_id == 0)
                 warning ("Initialize MPRIS session failed\n");
-
+            _sleep_timer = new SleepTimer (this);
+            _discord_rpc = new DiscordRPC (this);
             var settings = _settings = new Settings (application_id); 
             settings.bind ("color-scheme", this, "color-scheme", SettingsBindFlags.DEFAULT);
             settings.bind ("music-dir", this, "music-folder", SettingsBindFlags.DEFAULT);
             settings.bind ("sort-mode", this, "sort-mode", SettingsBindFlags.DEFAULT);
             settings.bind ("monitor-changes", _loader, "monitor-changes", SettingsBindFlags.DEFAULT);
             settings.bind ("remote-thumbnail", _thumbnailer, "remote-thumbnail", SettingsBindFlags.DEFAULT);
-            settings.bind ("gapless-playback", _player, "gapless", SettingsBindFlags.DEFAULT);
+
             settings.bind ("replay-gain", _player, "replay-gain", SettingsBindFlags.DEFAULT);
+            settings.bind ("eq-enabled", _player, "eq-enabled", SettingsBindFlags.DEFAULT);
+            settings.changed["eq-enabled"].connect (() => {
+                for (int i = 0; i < GstPlayer.EQ_BANDS; i++)
+                    _player.set_eq_band (i, settings.get_double ("eq-band%d".printf (i)));
+            });
+            for (int i = 0; i < GstPlayer.EQ_BANDS; i++) {
+                int band = i;
+                var key = "eq-band%d".printf (band);
+                settings.changed[key].connect (() => {
+                    _player.set_eq_band (band, settings.get_double (key));
+                });
+                _player.set_eq_band (band, settings.get_double (key));
+            }
             settings.bind ("audio-sink", _player, "audio-sink", SettingsBindFlags.DEFAULT);
             settings.bind ("volume", _player, "volume", SettingsBindFlags.DEFAULT);
-        }
+            _queue_shuffled = settings.get_boolean ("queue-shuffled");
+            _repeat_mode = settings.get_uint ("repeat-mode");
+
+            load_custom_css (settings.get_string ("custom-css-path"));
+            settings.changed["custom-css-path"].connect ((key) => {
+                load_custom_css (settings.get_string ("custom-css-path"));
+            });
+            }
 
         public override void activate () {
             base.activate ();
@@ -119,13 +146,29 @@ namespace G4 {
                 var ret = open_files_async.end (res);
                 if (ret) {
                     _list_modified = saved_modified;
-                    if (load_plist)
+                    if (load_plist) {
                         _loader.library.remove_playlist (plist_file.get_uri ());
+                        snapshot_queue_order ();
+                    }
                 }
                 if (initial) {
                     // 3. Load music folder to build the library
                     load_music_folder_async.begin ((obj, res)
                         => load_music_folder_async.end (res));
+                    // 4. Refresh current track metadata after a short delay.
+                    //    The PlayPanel may have been allocated before the tag cache
+                    //    or queue metadata was fully resolved, so its labels could
+                    //    still show the stub (filename/empty). Re-emit music_changed
+                    //    once more to ensure the UI picks up the correct info.
+                    run_timeout_once (250, () => {
+                        if (_current_music?.has_unknown () == true) {
+                            var cached = _loader.find_cache (_current_music?.uri ?? "");
+                            if (cached != null) {
+                                _current_music = cached;
+                                music_changed (cached);
+                            }
+                        }
+                    });
                 }
             });
         }
@@ -167,11 +210,13 @@ namespace G4 {
                 if (value >= (int) _current_list.get_n_items ()) {
                     value = Window.get_default ()?.open_next_playable_page () ?? value;
                 }
+                if (value < 0 || value >= (int) _current_list.get_n_items ()) {
+                    return;
+                }
                 current_music = _current_list.get_item (value) as Music;
                 _current_index = value;
                 _current_list_size = _current_list.get_n_items ();
                 index_changed (value, _current_list_size);
-                update_next_item ();
             }
         }
 
@@ -216,9 +261,11 @@ namespace G4 {
         public Gtk.IconPaintable? icon {
             get {
                 if (_icon == null) {
-                    var theme = Gtk.IconTheme.get_for_display (active_window.display);
+                    var win = active_window as Gtk.Window?;
+                    if (win == null) return null;
+                    var theme = Gtk.IconTheme.get_for_display (((!)win).display);
                     _icon = theme.lookup_icon (application_id, null, _cover_size,
-                        active_window.scale_factor, Gtk.TextDirection.NONE, Gtk.IconLookupFlags.FORCE_REGULAR);
+                        ((!)win).scale_factor, Gtk.TextDirection.NONE, Gtk.IconLookupFlags.FORCE_REGULAR);
                 }
                 return _icon;
             }
@@ -270,7 +317,7 @@ namespace G4 {
 
         public string name {
             get {
-                return _("Gapless");
+                return _("Semitone");
             }
         }
 
@@ -285,9 +332,24 @@ namespace G4 {
                 return _settings;
             }
         }
+        
+        private bool _queue_shuffled = false;
+        public bool queue_shuffled {
+          get { return _queue_shuffled; }
+          set {
+            _queue_shuffled = value;
+            _settings.set_boolean ("queue-shuffled", value);
+          }
+        }
 
-        public bool single_loop { get; set; }
-
+        private uint _repeat_mode = RepeatMode.NONE;
+        public uint repeat_mode {
+          get { return _repeat_mode; }
+          set {
+            _repeat_mode = value;
+            _settings.set_uint ("repeat-mode", value);
+          }
+        }
         public uint sort_mode {
             get {
                 return _sort_mode;
@@ -309,7 +371,9 @@ namespace G4 {
                 return _thumbnailer;
             }
         }
-
+        public SleepTimer? sleep_timer {
+          get { return _sleep_timer; }
+        }
         public async bool add_playlist_to_file_async (Playlist playlist, bool append) {
             var file = File.new_for_uri (playlist.list_uri);
             var uris = new GenericArray<string> (1024);
@@ -378,7 +442,8 @@ namespace G4 {
             yield _loader.load_files_async (files, musics, false, false, _sort_mode);
             _store_external_changed = true;
             if (_music_queue.get_n_items () == 0) {
-                _music_queue.splice (0, _music_queue.get_n_items (), (Object[]) musics.data);
+                _music_queue.splice (0, _music_queue.get_n_items (), to_object_array (musics));
+                snapshot_queue_order ();
             } else {
                 on_music_library_changed (0, 1, 1);
             }
@@ -405,8 +470,12 @@ namespace G4 {
         }
 
         public void play_previous () {
-            current_item--;
-            _player.play ();
+            if (GstPlayer.to_second (_player.position) > 5.0) {
+                _player.seek (GstPlayer.from_second (0));
+            } else if (current_item > 0) {
+                current_item--;
+                _player.play ();
+            }
         }
 
         private bool _reloading = false;
@@ -446,7 +515,19 @@ namespace G4 {
             }
             return saved;
         }
+        public void snapshot_queue_order () {
+    _queue_original_order.remove_range (0, _queue_original_order.length);
+    var count = _music_queue.get_n_items ();
+    for (var i = 0; i < count; i++) {
+        _queue_original_order.add ((Music) _music_queue.get_item (i));
+    }
+}
 
+public void restore_queue_order () {
+    if (_queue_original_order.length == 0) return;
+    _music_queue.remove_all ();
+    _music_queue.splice (0, 0, to_object_array (_queue_original_order));
+}
         public async bool save_queue_to_file () {
             var count = _music_queue.get_n_items ();
             var uris = new GenericArray<string> (count);
@@ -527,6 +608,37 @@ namespace G4 {
             return -1;
         }
 
+        private void load_custom_css (string path) {
+            var display = Gdk.Display.get_default ();
+            if (display == null) return;
+
+            if (_custom_css != null) {
+                Gtk.StyleContext.remove_provider_for_display ((!)display, (!)_custom_css);
+                _custom_css = null;
+            }
+
+            if (path.length == 0) return;
+
+            var file = File.new_for_path (path);
+            if (!file.query_exists ()) {
+                warning ("Custom CSS file not found: %s", path);
+                return;
+            }
+
+            _custom_css = new Gtk.CssProvider ();
+            try {
+                ((!)_custom_css).load_from_file (file);
+                Gtk.StyleContext.add_provider_for_display (
+                    (!)display,
+                    (!)_custom_css,
+                    Gtk.STYLE_PROVIDER_PRIORITY_USER
+                );
+            } catch (Error e) {
+                warning ("Failed to load custom CSS from %s: %s", path, e.message);
+                _custom_css = null;
+            }
+        }
+
         private void on_bus_acquired (DBusConnection connection, string name) {
             try {
                 connection.register_object ("/org/mpris/MediaPlayer2", new MprisPlayer (this, connection));
@@ -539,7 +651,7 @@ namespace G4 {
         private void on_music_found (GenericArray<Music> arr) {
             _store_external_changed = true;
             if (arr.length > 0) {
-                _music_queue.splice (_music_queue.get_n_items (), 0, (Object[]) arr.data);
+                _music_queue.splice (_music_queue.get_n_items (), 0, to_object_array (arr));
             } else {
                 on_music_library_changed (0, 1, 1);
             }
@@ -582,34 +694,29 @@ namespace G4 {
             }
         }
 
-        private void on_player_end () {
-            if (_single_loop) {
-                _player.seek (0);
-                _player.play ();
-            } else {
+private void on_player_end () {
+    switch (_repeat_mode) {
+        case RepeatMode.ONE:
+            _player.seek (0);
+            _player.play ();
+            break;
+        case RepeatMode.ALL:
+            var next = _current_index + 1;
+            if (next >= (int) _current_list.get_n_items ())
+                current_item = 0;
+            else
                 current_item++;
-            }
-        }
+            break;
+        case RepeatMode.NONE:
+        default:
+            if (_current_index + 1 < (int) _current_list.get_n_items ())
+                current_item++;
+            break;
+    }
+}
 
         private void on_player_error (Error err) {
             Window.get_default ()?.show_toast (err.message);
-            if (!_player.gapless) {
-                on_player_end ();
-            }
-        }
-
-        private string? on_player_next_uri_request () {
-            //  This is NOT called in main UI thread
-            lock (_next_uri) {
-                if (!_single_loop)
-                    _current_uri = _next_uri.str;
-                //  next_uri_start will be received soon later
-                return _current_uri;
-            }
-        }
-
-        private void on_player_next_uri_start () {
-            //  Received after next_uri_request
             on_player_end ();
         }
 
@@ -709,14 +816,6 @@ namespace G4 {
                 _current_index = index;
                 _current_list_size = size;
                 index_changed (index, size);
-            }
-            update_next_item ();
-        }
-
-        private void update_next_item () {
-            var next_music = (Music?) _current_list.get_item (_current_index + 1);
-            lock (_next_uri) {
-                _next_uri.assign (next_music?.uri ?? "");
             }
         }
     }

@@ -5,6 +5,7 @@ namespace G4 {
         public const string ARTIST = "artist";
         public const string PLAYING = "playing";
         public const string PLAYLIST = "playlist";
+        public const string TRACKS = "tracks";
     }
 
     public class MusicWidget : Gtk.Box {
@@ -122,11 +123,15 @@ namespace G4 {
     }
 
     public class MusicEntry : MusicWidget {
-        public MusicEntry (bool compact = true) {
+        public MusicEntry (int density = 1) {
             width_request = 324;
 
-            var cover_margin = compact ? 3 : 4;
-            var cover_size = compact ? 36 : 48;
+            var cover_margin = density >= 2 ? 6 : (density == 1 ? 4 : 3);
+            var cover_size = density >= 2 ? 56 : (density == 1 ? 48 : 36);
+            var vbox_spacing = density >= 2 ? 8 : (density == 1 ? 6 : 2);
+            margin_top = density >= 2 ? 10 : (density == 1 ? 6 : 0);
+            margin_bottom = density >= 2 ? 10 : (density == 1 ? 6 : 0);
+
             _image.margin_top = cover_margin;
             _image.margin_bottom = cover_margin;
             _image.margin_start = 4;
@@ -135,8 +140,7 @@ namespace G4 {
             _paintable.queue_draw.connect (_image.queue_draw);
             append (_image);
 
-            var spacing = compact ? 2 : 6;
-            var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, spacing);
+            var vbox = new Gtk.Box (Gtk.Orientation.VERTICAL, vbox_spacing);
             vbox.hexpand = true;
             vbox.valign = Gtk.Align.CENTER;
             vbox.margin_start = 12;
@@ -272,7 +276,7 @@ namespace G4 {
         var uri = build_library_uri (null, album);
         var menu = new Menu ();
         menu.append_item (create_menu_item_for_uri (uri, _("Play"), ACTION_APP + ACTION_PLAY));
-        menu.append_item (create_menu_item_for_uri (uri, _("_Random Play"), ACTION_APP + ACTION_RANDOM_PLAY));
+        menu.append_item (create_menu_item_for_uri (uri, _("_Shuffle Play"), ACTION_APP + ACTION_RANDOM_PLAY));
         var section = new Menu ();
         section.append_item (create_menu_item_for_uri (uri, _("Play at _Next"), ACTION_APP + ACTION_PLAY_AT_NEXT));
         section.append_item (create_menu_item_for_uri (uri, _("Add to _Queue"), ACTION_APP + ACTION_ADD_TO_QUEUE));
@@ -294,7 +298,7 @@ namespace G4 {
         var uri = build_library_uri (artist, null);
         var menu = new Menu ();
         menu.append_item (create_menu_item_for_uri (uri, _("Play"), ACTION_APP + ACTION_PLAY));
-        menu.append_item (create_menu_item_for_uri (uri, _("_Random Play"), ACTION_APP + ACTION_RANDOM_PLAY));
+        menu.append_item (create_menu_item_for_uri (uri, _("_Shuffle Play"), ACTION_APP + ACTION_RANDOM_PLAY));
         var section = new Menu ();
         section.append_item (create_menu_item_for_uri (uri, _("Play at _Next"), ACTION_APP + ACTION_PLAY_AT_NEXT));
         section.append_item (create_menu_item_for_uri (uri, _("Add to _Queue"), ACTION_APP + ACTION_ADD_TO_QUEUE));
