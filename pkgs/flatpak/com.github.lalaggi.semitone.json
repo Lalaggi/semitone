@@ -3,6 +3,7 @@
     "runtime": "org.gnome.Platform",
     "runtime-version": "49",
     "sdk": "org.gnome.Sdk",
+    "appstream-compose": false,
     "command": "semitone",
     "finish-args": [
         "--device=dri",
