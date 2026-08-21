@@ -56,11 +56,10 @@ sudo apk add vala meson gtk4.0-dev libadwaita-dev gstreamer-dev gst-plugins-base
 
 Pre-built flatpak packages are available in [flatpak-downloads](https://gitlab.com/Lalaggi/semitone/-/tree/main/flatpak-downloads). May be slightly behind the latest version.
 
-### Recommended: [gitpkg](https://codeberg.org/el1lovescomputers/gitpkg)
+### Recommended: [gitpkg](https://gitlab.com/Lalaggi/gitpkg)
 
 ```bash
-curl -fsSL "https://codeberg.org/el1lovescomputers/gitpkg/raw/branch/main/install.sh" | sh
-gitpkg install el1lovescomputers/semitone --supplier "codeberg.org"
+gitpkg install Lalaggi/semitone --supplier gitlab.com
 ```
 
 ### From Source
@@ -75,3 +74,7 @@ sudo ninja -C build install
 ## Reporting Issues
 
 https://gitlab.com/Lalaggi/semitone/-/issues
+
+## License
+
+GPL-3.0 — see [LICENSE](LICENSE).
