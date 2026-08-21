@@ -21,7 +21,7 @@
     <translation type="gettext">semitone</translation>
 
     <description>
-      	<p>Gapless (AKA: G4Music) is a light weight music player written in GTK4, focuses on large music collection.</p>
+      	<p>Semitone is a lightweight music player written in GTK4, focused on large music collections. Forked from Gapless (G4Music) with added features like synced lyrics, Discord RPC, and an equalizer.</p>
         <p>Features</p>
         <ul>
         <li>Supports most music file types, Samba and any other remote protocols (depends on GIO and GStreamer).</li>
