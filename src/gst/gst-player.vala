@@ -29,6 +29,7 @@ namespace G4 {
         private dynamic Gst.Pipeline? _pipeline = null;
         private dynamic Gst.Element? _audio_sink = null;
         private dynamic Gst.Element? _replay_gain = null;
+        private double[] _eq_bands = new double[EQ_BANDS];
         private dynamic Gst.Element? _equalizer = null;
         private string _audio_sink_name = "";
         private int _audio_sink_requested = 0;
@@ -219,22 +220,31 @@ namespace G4 {
         }
 
         public double get_eq_band (int index) {
-            if (_equalizer == null || index < 0 || index >= EQ_BANDS)
+            if (index < 0 || index >= EQ_BANDS)
                 return 0.0;
-            var band = ((Gst.ChildProxy) (!)_equalizer).get_child_by_index (index);
-            if (band == null)
-                return 0.0;
-            double gain = 0.0;
-            ((!)band).get ("gain", ref gain);
-            return gain;
+            return _eq_bands[index];
         }
 
         public void set_eq_band (int index, double gain) {
             if (_equalizer == null || index < 0 || index >= EQ_BANDS)
                 return;
-            var band = ((Gst.ChildProxy) (!)_equalizer).get_child_by_index (index);
-            if (band != null)
-                ((!)band).set ("gain", gain);
+            _eq_bands[index] = gain;
+            apply_eq_offset ();
+        }
+
+        private void apply_eq_offset () {
+            if (_equalizer == null)
+                return;
+            double offset = 0.0;
+            for (int i = 0; i < EQ_BANDS; i++) {
+                if (_eq_bands[i] > offset)
+                    offset = _eq_bands[i];
+            }
+            for (int i = 0; i < EQ_BANDS; i++) {
+                var band = ((Gst.ChildProxy) (!)_equalizer).get_child_by_index (i);
+                if (band != null)
+                    ((!)band).set ("gain", _eq_bands[i] - offset);
+            }
         }
 
         public Gst.TagList? tag_list {
