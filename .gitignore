@@ -3,3 +3,5 @@ build
 builddir
 flatpak-build*
 probeBetterLyrics.py
+.vscode/
+data/gschemas.compiled

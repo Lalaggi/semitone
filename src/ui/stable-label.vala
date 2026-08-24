@@ -83,44 +83,32 @@ namespace G4 {
         public override void snapshot (Gtk.Snapshot snapshot) {
             var width = get_width ();
             var overflow = marquee && width < _label_width;
-            if (overflow) {
-                var height = get_height ();
-                var total_width = _label_width + SPACE;
-#if GTK_4_10
-                var mask_width = float.min (width * 0.1f, height * 1.25f);
-                var left_mask = _label_offset < mask_width ? _label_offset : (_label_offset + mask_width > total_width ? 0 : mask_width);
-                var rect = Graphene.Rect ();
-                rect.init (0, 0, left_mask, height);
-                Gsk.ColorStop[] stops = { { 0, color_from_uint (0xff000000u) }, { 1, color_from_uint (0x00000000u) } };
-                snapshot.push_mask(Gsk.MaskMode.INVERTED_ALPHA);
-                snapshot.append_linear_gradient (rect, rect.get_top_left (), rect.get_top_right (), stops);
-                rect.init (width - mask_width, 0, mask_width, height);
-                snapshot.append_linear_gradient (rect, rect.get_top_right (), rect.get_top_left (), stops);
-                snapshot.pop ();
-#endif
-                var bounds = Graphene.Rect ();
-                bounds.init (0, 0, width, height);
-                snapshot.push_clip (bounds);
-                var point = Graphene.Point ();
-                point.init (0, 0);
-                if (_label_offset < _label_width) {
-                    point.x = - _label_offset;
-                    snapshot.translate (point);
-                    base.snapshot (snapshot);
-                    point.x = - point.x;
-                    snapshot.translate (point);
-                }
-                if (_label_offset >= total_width - width) {
-                    point.x = - _label_offset + total_width;
-                    snapshot.translate (point);
-                    base.snapshot (snapshot);
-                    point.x = - point.x;
-                    snapshot.translate (point);
-                }
-                snapshot.pop ();
-            } else {
-                base.snapshot (snapshot);
+            if (!overflow) {
+                snapshot_child (_label, snapshot);
+                return;
             }
+            var height = get_height ();
+            var total_width = _label_width + SPACE;
+            var bounds = Graphene.Rect ();
+            bounds.init (0, 0, width, height);
+            snapshot.push_clip (bounds);
+            if (_label_offset < _label_width) {
+                snapshot.save ();
+                var point = Graphene.Point ();
+                point.init (- _label_offset, 0);
+                snapshot.translate (point);
+                snapshot_child (_label, snapshot);
+                snapshot.restore ();
+            }
+            if (_label_offset >= total_width - width) {
+                snapshot.save ();
+                var point = Graphene.Point ();
+                point.init (- _label_offset + total_width, 0);
+                snapshot.translate (point);
+                snapshot_child (_label, snapshot);
+                snapshot.restore ();
+            }
+            snapshot.pop ();
         }
 
         private uint _pixels_per_second = 24;

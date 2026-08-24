@@ -26,6 +26,9 @@ namespace G4 {
         private bool _programmatic_scroll = false;
         private int _previous_first_active = -1;
         private string[] _last_markup = {};
+        private Adw.TimedAnimation? _scroll_animation = null;
+        private uint _word_fade_timer = 0;
+        private double _word_fade_progress = 0.0;
 
         public LyricsSheet (Application app) {
             _app = app;
@@ -154,6 +157,8 @@ namespace G4 {
                         _resize_timeout = 0;
                     }
                     cancel_auto_scroll_timeout ();
+                    cancel_scroll_animation ();
+                    cancel_word_fade_timer ();
                     _app.player.position_updated.disconnect (on_position_updated);
                     cancel_current_load ();
                 }
@@ -162,6 +167,8 @@ namespace G4 {
             app.music_changed.connect ((music) => {
                 cancel_current_load ();
                 cancel_auto_scroll_timeout ();
+                cancel_scroll_animation ();
+                cancel_word_fade_timer ();
                 _active_indices = {};
                 _last_markup = {};
                 _previous_first_active = -1;
@@ -180,6 +187,7 @@ namespace G4 {
         }
 
         private void scroll_to_top () {
+            cancel_scroll_animation ();
             var adj = _scroll.vadjustment;
             _programmatic_scroll = true;
             adj.value = adj.lower;
@@ -208,6 +216,103 @@ namespace G4 {
 
         private void update_offset_label () {
             _offset_label.label = "%ldms".printf ((long) _offset_ms);
+        }
+
+        // ── Smooth scroll animation ──────────────────────────────────
+
+        private void cancel_scroll_animation () {
+            if (_scroll_animation != null) {
+                ((!)_scroll_animation).pause ();
+                _scroll_animation = null;
+            }
+        }
+
+        private void animate_scroll_to (double target) {
+            var adj = _scroll.vadjustment;
+            var current = adj.value;
+            var clamped = target.clamp (adj.lower, adj.upper - adj.page_size);
+            if ((clamped - current).abs () < 1.0) {
+                _programmatic_scroll = true;
+                adj.value = clamped;
+                _programmatic_scroll = false;
+                return;
+            }
+
+            cancel_scroll_animation ();
+
+            var duration_ms = (uint) ((clamped - current).abs () / adj.page_size * 600).clamp (200, 800);
+            var target_val = clamped;
+            var start_val = current;
+
+            var cb = new Adw.CallbackAnimationTarget ((value) => {
+                _programmatic_scroll = true;
+                adj.value = value;
+                _programmatic_scroll = false;
+            });
+            _scroll_animation = new Adw.TimedAnimation (
+                _scroll, start_val, target_val, duration_ms, cb
+            );
+            ((!)_scroll_animation).easing = Adw.Easing.EASE_OUT_QUAD;
+            ((!)_scroll_animation).play ();
+        }
+
+        // ── Word fade animation ──────────────────────────────────────
+
+        private void cancel_word_fade_timer () {
+            if (_word_fade_timer != 0) {
+                GLib.Source.remove (_word_fade_timer);
+                _word_fade_timer = 0;
+            }
+            _word_fade_progress = 0.0;
+        }
+
+        private void start_word_fade (int line_index, double target_sec) {
+            cancel_word_fade_timer ();
+            _word_fade_progress = 0.0;
+            var step_ms = 16;
+            var total_ms = 100;
+            _word_fade_timer = GLib.Timeout.add (step_ms, () => {
+                _word_fade_progress += (double) step_ms / total_ms;
+                if (_word_fade_progress >= 1.0) {
+                    _word_fade_progress = 1.0;
+                    update_word_fade_markup (line_index, target_sec, 1.0);
+                    _word_fade_timer = 0;
+                    return false;
+                }
+                update_word_fade_markup (line_index, target_sec, _word_fade_progress);
+                return true;
+            });
+        }
+
+        private void update_word_fade_markup (int line_index, double sec, double progress) {
+            var row = _list_box.get_row_at_index (line_index);
+            if (row == null) return;
+            var label = ((!)row).child as Gtk.Label;
+            if (label == null) return;
+            var markup = build_line_markup_faded (_lines[line_index], sec, progress);
+            ((!)label).set_label (markup);
+        }
+
+        private string build_line_markup_faded (LyricLine line, double sec, double progress) {
+            if (line.words.length == 0) {
+                return Markup.escape_text (line.text.length > 0 ? line.text : "\u00B7");
+            }
+            var sb = new StringBuilder ();
+            foreach (var word in line.words) {
+                var escaped = Markup.escape_text (word.text);
+                if (sec < 0) {
+                    sb.append ("<span alpha='40%%'>%s</span> ".printf (escaped));
+                } else if (sec + 0.05 >= word.start_sec && sec < word.end_sec) {
+                    // fade from 40% → 100% over 100ms, centered 50ms before start
+                    var alpha = 40 + (int) (60 * progress);
+                    sb.append ("<span alpha='%d%%' underline='single'>%s</span> ".printf (alpha, escaped));
+                } else if (sec >= word.end_sec) {
+                    sb.append ("<span alpha='65%%'>%s</span> ".printf (escaped));
+                } else {
+                    sb.append ("<span alpha='40%%'>%s</span> ".printf (escaped));
+                }
+            }
+            return sb.str.strip ();
         }
 
         // ── Position tracking ────────────────────────────────────────
@@ -254,10 +359,12 @@ namespace G4 {
         private void update_current_line (int64 ms, double sec) {
             if (_lines.length == 0) return;
 
+            // Lead by 50ms so fade is midpoint at actual activation
+            var lead_ms = ms + 50;
             string[] active_voices = {};
             int[] new_active = {};
             for (var i = 0; i < _lines.length; i++) {
-                if (_lines[i].time_ms <= ms) {
+                if (_lines[i].time_ms <= lead_ms) {
                     bool found = false;
                     for (var j = 0; j < active_voices.length; j++) {
                         if (active_voices[j] == _lines[i].voice_role) {
@@ -300,12 +407,40 @@ namespace G4 {
                 }
             }
 
+            // Detect newly active lines — fade 50ms early so it's midpoint at actual time
+            for (var i = 0; i < new_active.length; i++) {
+                bool was_active = false;
+                for (var j = 0; j < _active_indices.length; j++) {
+                    if (_active_indices[j] == new_active[i]) {
+                        was_active = true;
+                        break;
+                    }
+                }
+                if (!was_active && _lines[new_active[i]].words.length > 0) {
+                    start_word_fade (new_active[i], sec + 0.05);
+                } else if (was_active) {
+                    // Skip update if this line is currently fading
+                    if (_word_fade_timer != 0 && _last_markup.length > new_active[i]) {
+                        // check if any word in this line is in fade window
+                        bool in_fade = false;
+                        foreach (var w in _lines[new_active[i]].words) {
+                            if (sec + 0.05 >= w.start_sec && sec < w.end_sec) {
+                                in_fade = true; break;
+                            }
+                        }
+                        if (in_fade) continue;
+                    }
+                    update_word_highlights (new_active[i], sec);
+                }
+            }
+
             for (var i = 0; i < new_active.length; i++) {
                 update_word_highlights (new_active[i], sec);
             }
 
             _active_indices = new_active;
 
+            var first_active = new_active.length > 0 ? new_active[0] : -1;
             var idx = 0;
             var child = _list_box.get_first_child ();
             while (child != null) {
@@ -321,17 +456,24 @@ namespace G4 {
                     }
                     if (is_active) {
                         row.remove_css_class ("lyrics-row-inactive");
+                        row.remove_css_class ("lyrics-row-near");
                         row.add_css_class ("lyrics-row-active");
                     } else {
                         row.remove_css_class ("lyrics-row-active");
-                        row.add_css_class ("lyrics-row-inactive");
+                        var distance = first_active >= 0 ? (idx - first_active).abs () : 5;
+                        if (distance <= 2) {
+                            row.add_css_class ("lyrics-row-near");
+                            row.remove_css_class ("lyrics-row-inactive");
+                        } else {
+                            row.add_css_class ("lyrics-row-inactive");
+                            row.remove_css_class ("lyrics-row-near");
+                        }
                     }
                     idx++;
                 }
                 child = next;
             }
 
-            var first_active = new_active.length > 0 ? new_active[0] : -1;
             if (first_active != _previous_first_active && !_user_scrolling) {
                 _previous_first_active = first_active;
                 if (first_active >= 0) {
@@ -345,8 +487,7 @@ namespace G4 {
                             _programmatic_scroll = true;
                             var target = bounds.get_y () + adj.get_value ()
                                 + (bounds.get_height () / 2.0) - (adj.page_size / 2.0);
-                            adj.set_value (target.clamp (adj.lower, adj.upper - adj.page_size));
-                            _programmatic_scroll = false;
+                            animate_scroll_to (target);
                             return false;
                         });
                     }
@@ -677,9 +818,15 @@ namespace G4 {
             css.load_from_string ("""
                 .lyrics-row-inactive {
                     opacity: 0.35;
+                    transition: opacity 250ms ease-out;
+                }
+                .lyrics-row-near {
+                    opacity: 0.55;
+                    transition: opacity 250ms ease-out;
                 }
                 .lyrics-row-active {
                     opacity: 1.0;
+                    transition: opacity 250ms ease-out;
                 }
                 .lyrics-word {
                     font-size: 20px;
