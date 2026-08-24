@@ -4,7 +4,7 @@
 
 A lightweight GTK4 music player written in Vala.
 
-**Source:** [github.com/Lalaggi/Semitone](https://github.com/Lalaggi/Semitone)
+**Source:** [gitlab.com/Lalaggi/semitone](https://gitlab.com/Lalaggi/semitone)
 
 ## Features
 
@@ -54,19 +54,18 @@ sudo apk add vala meson gtk4.0-dev libadwaita-dev gstreamer-dev gst-plugins-base
 
 ### Flatpak
 
-Pre-built flatpak packages are available in [flatpak-downloads](https://github.com/Lalaggi/Semitone/tree/main/flatpak-downloads). May be slightly behind the latest version.
+Pre-built flatpak packages are available in [flatpak-downloads](https://gitlab.com/Lalaggi/semitone/-/tree/main/flatpak-downloads). May be slightly behind the latest version.
 
-### Recommended: [gitpkg](https://codeberg.org/el1lovescomputers/gitpkg)
+### Recommended: [gitpkg](https://gitlab.com/Lalaggi/gitpkg)
 
 ```bash
-curl -fsSL "https://codeberg.org/el1lovescomputers/gitpkg/raw/branch/main/install.sh" | sh
-gitpkg install el1lovescomputers/semitone --supplier "codeberg.org"
+gitpkg install Lalaggi/semitone --supplier gitlab.com
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/Lalaggi/Semitone
+git clone https://gitlab.com/Lalaggi/semitone.git
 cd semitone
 meson setup build --buildtype=release --prefix=/usr
 sudo ninja -C build install
@@ -74,4 +73,8 @@ sudo ninja -C build install
 
 ## Reporting Issues
 
-https://github.com/Lalaggi/Semitone/issues
+https://gitlab.com/Lalaggi/semitone/-/issues
+
+## License
+
+GPL-3.0 — see [LICENSE](LICENSE).
