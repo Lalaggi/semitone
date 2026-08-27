@@ -6,17 +6,24 @@
     <project_license>GPL-3.0-or-later</project_license>
     <summary>Play your music elegantly</summary>
 
-    <developer id="com.github.lalaggi">
+    <developer id="xyz.lalaggi">
         <name translate="no">Lalaggi</name>
     </developer>
     <update_contact>elilovescomputers@gmail.com</update_contact>
 
-  <url type="homepage">https://gitlab.gnome.org/lalaggi/semitone</url>
-  <url type="bugtracker">https://gitlab.gnome.org/lalaggi/semitone/issues</url>
-    <url type="vcs-browser">https://github.com/Lalaggi/Semitone</url>
+  <url type="homepage">https://gitlab.com/Lalaggi/semitone</url>
+  <url type="bugtracker">https://gitlab.com/Lalaggi/semitone/-/issues</url>
+    <url type="vcs-browser">https://gitlab.com/Lalaggi/semitone</url>
 
     <launchable type="desktop-id">@app_id@.desktop</launchable>
-    <provides>@app_id@.desktop</provides>
+    <!-- Transitional: allow Software Center to replace old ID -->
+    <provides>
+      <id>@app_id@.desktop</id>
+      <id>com.github.lalaggi.semitone.desktop</id>
+    </provides>
+    <replaces>
+      <id>com.github.lalaggi.semitone</id>
+    </replaces>
     <content_rating type="oars-1.1"/>
     <translation type="gettext">semitone</translation>
 

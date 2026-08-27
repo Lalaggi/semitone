@@ -1,6 +1,6 @@
-app-id: com.github.lalaggi.semitone
+app-id: xyz.lalaggi.semitone
 runtime: org.gnome.Platform
-runtime-version: '48'
+runtime-version: '50'
 sdk: org.gnome.Sdk
 command: semitone
 
@@ -12,6 +12,7 @@ finish-args:
   - --socket=pulseaudio
   - --socket=wayland
   - --filesystem=xdg-music
+  - --filesystem=home
   - --talk-name=org.gtk.vfs.*
 
 cleanup:

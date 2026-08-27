@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="semitone">
+  <schema id="com.github.lalaggi.semitone" path="/com/github/lalaggi/semitone/">
+    <key name="queue-shuffled" type="b">
+      <default>false</default>
+      <summary>Whether the queue is currently shuffled</summary>
+    </key>
+    <key name="ui-scale" type="d">
+      <default>1.0</default>
+      <summary>Internal UI scale factor</summary>
+    </key>
+    <key name="repeat-mode" type="u">
+      <default>0</default>
+      <summary>Repeat mode (0=none, 1=all, 2=one)</summary>
+    </key>
+    <key name="blur-mode" type="u">
+      <range min="0" max="2"/>
+      <default>1</default>
+      <summary>Background blur mode</summary>
+    </key>
+    <key name="color-scheme" type="u">
+      <range min="0" max="4"/>
+      <default>0</default>
+      <summary>Prefer color scheme</summary>
+    </key>
+    <key name="list-density" type="i">
+      <range min="0" max="2"/>
+      <default>1</default>
+      <summary>List density: 0 = compact, 1 = normal, 2 = roomy</summary>
+    </key>
+    <key name="grid-mode" type="b">
+      <default>true</default>
+      <summary>Grid view for artists/albums</summary>
+    </key>
+    <key name="monitor-changes" type="b">
+      <default>false</default>
+      <summary>Monitor local file changes</summary>
+    </key>
+    <key name="music-dir" type="s">
+      <default>''</default>
+      <summary>Load music from folder</summary>
+    </key>
+    <key name="remote-thumbnail" type="b">
+      <default>false</default>
+      <summary>Load thumbnails for non-local files</summary>
+    </key>
+    <key name="remain-progress" type="b">
+      <default>false</default>
+      <summary>Show remain progress</summary>
+    </key>
+    <key name="audio-sink" type="s">
+      <default>''</default>
+      <summary>Prefer audio sink</summary>
+    </key>
+    <key name="play-background" type="b">
+      <default>false</default>
+      <summary>Keep playing after window closed</summary>
+    </key>
+
+    <key name="replay-gain" type="u">
+      <range min="0" max="2"/>
+      <default>0</default>
+      <summary>Normalize volume with ReplayGain</summary>
+    </key>
+    <key name="eq-enabled" type="b">
+      <default>false</default>
+      <summary>Enable graphic equalizer</summary>
+    </key>
+    <key name="eq-band0" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 0 gain (dB)</summary>
+    </key>
+    <key name="eq-band1" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 1 gain (dB)</summary>
+    </key>
+    <key name="eq-band2" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 2 gain (dB)</summary>
+    </key>
+    <key name="eq-band3" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 3 gain (dB)</summary>
+    </key>
+    <key name="eq-band4" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 4 gain (dB)</summary>
+    </key>
+    <key name="eq-band5" type="d">
+      <range min="-24.0" max="12.0"/>
+      <default>0.0</default>
+      <summary>EQ band 5 gain (dB)</summary>
+    </key>
+    <key name="rotate-cover" type="b">
+      <default>true</default>
+      <summary>Rotate album cover</summary>
+    </key>
+    <key name="peak-characters" type="s">
+      <default>'='</default>
+      <summary>Peak characters</summary>
+    </key>
+    <key name="show-peak" type="b">
+      <default>true</default>
+      <summary>Show audio peak level</summary>
+    </key>
+    <key name="single-click-activate" type="b">
+      <default>true</default>
+      <summary>Single click to activate item</summary>
+    </key>
+    <key name="sort-mode" type="u">
+      <range min="0" max="5"/>
+      <default>3</default>
+      <summary>Sort Mode</summary>
+    </key>
+    <key name="leaflet-mode" type="i">
+      <default>0</default>
+    </key>
+    <key name="maximized" type="b">
+      <default>false</default>
+    </key>
+    <key name="width" type="i">
+      <default>800</default>
+    </key>
+    <key name="height" type="i">
+      <default>600</default>
+    </key>
+    <key name="library-uri" type="s">
+      <default>''</default>
+    </key>
+    <key name="recent-music" type="s">
+      <default>''</default>
+    </key>
+    <key name="recent-playlist" type="s">
+      <default>''</default>
+    </key>
+    <key name="volume" type="d">
+      <default>1</default>
+    </key>
+    <key name="custom-css-path" type="s">
+      <default>''</default>
+      <summary>Path to custom CSS stylesheet</summary>
+      <description>Path to a CSS file to apply on top of the default styles</description>
+    </key>
+    <key name="lyrics-paxsenix-enabled" type="b">
+      <default>true</default>
+      <summary>Fetch lyrics from PaxSenix</summary>
+    </key>
+    <key name="lyrics-betterlyrics-enabled" type="b">
+      <default>true</default>
+      <summary>Fetch lyrics from BetterLyrics</summary>
+    </key>
+    <key name="lyrics-simpmusic-enabled" type="b">
+      <default>true</default>
+      <summary>Fetch lyrics from SimpMusic</summary>
+    </key>
+    <key name="lyrics-lyricsplus-enabled" type="b">
+      <default>true</default>
+      <summary>Fetch lyrics from LyricsPlus</summary>
+    </key>
+    <key name="lyrics-lrclib-enabled" type="b">
+      <default>true</default>
+      <summary>Fetch lyrics from LRCLib</summary>
+    </key>
+    <key name="lyrics-netease-enabled" type="b">
+      <default>false</default>
+      <summary>Enable NetEase lyrics provider</summary>
+    </key>
+    <key name="lyrics-megalobiz-enabled" type="b">
+      <default>false</default>
+      <summary>Enable Megalobiz lyrics provider</summary>
+    </key>
+    <key name="lyrics-genius-enabled" type="b">
+      <default>false</default>
+      <summary>Enable Genius provider</summary>
+    </key>
+    <key name="lyrics-musixmatch-enabled" type="b">
+      <default>false</default>
+      <summary>Enable Musixmatch provider (requires API key)</summary>
+    </key>
+    <key name="lyrics-musicbrainz-enabled" type="b">
+      <default>true</default>
+      <summary>Enable MusicBrainz instrumental detection</summary>
+    </key>
+    <key name="lyrics-prefer-synced" type="b">
+      <default>true</default>
+      <summary>Always try synced providers first</summary>
+    </key>
+    <key name="lyrics-auto-select" type="b">
+      <default>true</default>
+      <summary>Automatically select best lyrics from any provider</summary>
+    </key>
+    <key name="lyrics-plain-fallback" type="b">
+      <default>true</default>
+      <summary>Fall back to plain text if no synced lyrics found</summary>
+    </key>
+    <key name="lyrics-autoscroll-timeout" type="i">
+      <range min="0" max="30000"/>
+      <default>8000</default>
+      <summary>Auto-scroll resume delay in milliseconds after user scroll</summary>
+    </key>
+    <key name="lyrics-provider-order" type="s">
+      <default>'betterlyrics,simpmusic,musicbrainz,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch'</default>
+      <summary>Comma-separated provider priority order</summary>
+    </key>
+  </schema>
+</schemalist>

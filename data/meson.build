@@ -72,6 +72,13 @@ install_data(
   install_dir: get_option('datadir') / 'glib-2.0' / 'schemas'
 )
 
+# Transitional: keep old GSchema for seamless migration from com.github.lalaggi.semitone
+# Remove after one release once users have migrated.
+install_data(
+  'com.github.lalaggi.semitone.gschema.xml',
+  install_dir: get_option('datadir') / 'glib-2.0' / 'schemas'
+)
+
 compile_schemas = find_program('glib-compile-schemas', required: false)
 if compile_schemas.found()
   test('Validate schema file', compile_schemas,

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="semitone">
-  <schema id="@app_id@" path="/com/github/lalaggi/semitone/">
+  <schema id="@app_id@" path="/xyz/lalaggi/semitone/">
     <key name="queue-shuffled" type="b">
       <default>false</default>
       <summary>Whether the queue is currently shuffled</summary>

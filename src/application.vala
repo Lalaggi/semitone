@@ -43,6 +43,10 @@ namespace RepeatMode {
         public override void startup () {
             base.startup ();
 
+            // Seamless migration: com.github.lalaggi.semitone -> xyz.lalaggi.semitone
+            // Keep for one release, then remove. Handles GSettings, cache, and flatpak data.
+            migrate_old_app_data ();
+
             //  Must load tag cache after the app register (GLib init), to make sort works
             _loader.load_tag_cache ();
 
@@ -801,6 +805,69 @@ private void on_player_end () {
                         thumbnail_changed (music, paintable);
                     }
                 }
+            }
+        }
+
+        private void migrate_old_app_data () {
+            migrate_flatpak_data ();
+            migrate_cache_dir ();
+            migrate_gsettings ();
+        }
+
+        private string get_real_home () {
+            var home = Environment.get_home_dir ();
+            if (FileUtils.test ("/.flatpak-info", FileTest.EXISTS)) {
+                return Path.build_filename (home, "..", "..", "..");
+            }
+            return home;
+        }
+
+        private void migrate_flatpak_data () {
+            try {
+                var real_home = get_real_home ();
+                var old_dir = File.new_for_path (Path.build_filename (real_home, ".var", "app", "com.github.lalaggi.semitone"));
+                var new_dir = File.new_for_path (Path.build_filename (real_home, ".var", "app", "xyz.lalaggi.semitone"));
+                if (old_dir.query_exists ()) {
+                    try { new_dir.make_directory_with_parents (); } catch (Error e) {}
+                    string cmd = "cp -a -n \"%s/.\" \"%s\"".printf ((!)old_dir.get_path (), (!)new_dir.get_path ());
+                    int es; string so, se;
+                    Process.spawn_command_line_sync (cmd, out so, out se, out es);
+                    if (es == 0) print ("Migrated flatpak data %s -> %s\n", (!)old_dir.get_path (), (!)new_dir.get_path ());
+                }
+            } catch (Error e) { warning ("Flatpak data migration error: %s", e.message); }
+        }
+
+        private void migrate_cache_dir () {
+            try {
+                var real_home = get_real_home ();
+                var old_cache = File.new_for_path (Path.build_filename (real_home, ".cache", "com.github.lalaggi.semitone"));
+                var new_cache = File.new_for_path (Path.build_filename (real_home, ".cache", "xyz.lalaggi.semitone"));
+                if (old_cache.query_exists ()) {
+                    try { new_cache.make_directory_with_parents (); } catch (Error e) {}
+                    string cmd = "cp -a -n \"%s/.\" \"%s\"".printf ((!)old_cache.get_path (), (!)new_cache.get_path ());
+                    int es; string so, se;
+                    Process.spawn_command_line_sync (cmd, out so, out se, out es);
+                    if (es == 0) print ("Migrated cache %s -> %s\n", (!)old_cache.get_path (), (!)new_cache.get_path ());
+                }
+            } catch (Error e) { warning ("Cache migration error: %s", e.message); }
+        }
+
+        private void migrate_gsettings () {
+            try {
+                var old_settings = new GLib.Settings ("com.github.lalaggi.semitone");
+                var new_settings = new GLib.Settings ("xyz.lalaggi.semitone");
+                foreach (var key in old_settings.list_keys ()) {
+                    try {
+                        var old_val = old_settings.get_value (key);
+                        var new_val = new_settings.get_value (key);
+                        if (!old_val.equal (new_val)) {
+                            new_settings.set_value (key, old_val);
+                        }
+                    } catch (Error e) { warning ("GSettings migrate key %s failed: %s", key, e.message); }
+                }
+                GLib.Settings.sync ();
+            } catch (Error e) {
+                debug ("GSettings migration skipped (no old schema): %s", e.message);
             }
         }
 
