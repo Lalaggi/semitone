@@ -68,6 +68,13 @@
     </screenshots>
 
     <releases>
+        <release version="1.3.2" date="2026-08-27">
+            <description translate="no">
+                <ul>
+                <li>Migrate app ID to xyz.lalaggi.semitone, GNOME 50, AppStream replaces for seamless upgrade.</li>
+                </ul>
+            </description>
+        </release>
         <release version="4.6" date="2025-11-16">
             <description translate="no">
                 <ul>
