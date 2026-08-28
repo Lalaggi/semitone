@@ -42,37 +42,66 @@ namespace G4 {
 
         if (raw.contains ("<") && raw.contains (":")) {
             var lines = raw.split ("\n");
-            bool has_word_timing_line = false;
+            bool has_v1_word_timing_line = false;
+            bool has_v2_word_timing_line = false;
             bool has_inline_timing = false;
             foreach (var line in lines) {
                 var ls = line.strip ();
-                if (ls.has_prefix ("<") && ls.contains (":") && ls.contains ("|")) {
-                    has_word_timing_line = true;
-                    break;
+                if (ls.has_prefix ("<")) {
+                    if (looks_like_v2_timing_line (ls)) {
+                        has_v2_word_timing_line = true;
+                    } else if (ls.contains ("|") && ls.contains (":") && ls.contains (">")) {
+                        // v1 bulk: <word:1.0:2.0|...> — not v2, has pipe and word text
+                        has_v1_word_timing_line = true;
+                    } else if (ls.contains (":") && ls.contains (">")) {
+                        // fallback: any <...> with colon but not v2 could still be v1-like
+                        // treat as v1 if inside not digit-start
+                        var gt = ls.index_of_char ('>');
+                        if (gt > 0) {
+                            var inside = ls.substring (1, gt - 1).strip ();
+                            if (inside.length > 0 && !inside[0].isdigit ())
+                                has_v1_word_timing_line = true;
+                        }
+                    }
+                    if (has_v1_word_timing_line || has_v2_word_timing_line) break;
                 }
                 if (ls.has_prefix ("[") && ls.contains ("]")) {
                     var bracket_close = ls.index_of_char (']');
                     var after_bracket = ls.substring (bracket_close + 1).strip ();
                     // Check for inline timestamps, possibly preceded by a voice
                     // prefix like "v1:" — e.g. [00:16.83]v1:<00:16.834>text
+                    // Extended LRC has inline <mm:ss.xx> after the header timestamp;
+                    // LRC+ v2 has separate line starting with "<", not inline.
                     if (after_bracket.has_prefix ("<")) {
                         if (after_bracket.contains (":") && after_bracket.contains (">")) {
-                            has_inline_timing = true;
-                            break;
+                            // ensure it's not a v2 attr block like {voice:...} after ]
+                            // inline timing must look like timestamp inside <>
+                            var gt_inline = after_bracket.index_of_char ('>');
+                            if (gt_inline > 0) {
+                                var inside_inline = after_bracket.substring (1, gt_inline - 1).strip ();
+                                if (parse_timestamp (inside_inline) >= 0)
+                                    has_inline_timing = true;
+                            }
+                            if (has_inline_timing) break;
                         }
                     } else {
                         var lt_pos = after_bracket.index_of_char ('<');
                         if (lt_pos > 0 && lt_pos < 4) {
                             var inline = after_bracket.substring (lt_pos);
                             if (inline.contains (":") && inline.contains (">")) {
-                                has_inline_timing = true;
-                                break;
+                                var gt_inline2 = inline.index_of_char ('>');
+                                if (gt_inline2 > 0) {
+                                    var inside_inline2 = inline.substring (1, gt_inline2 - 1).strip ();
+                                    if (parse_timestamp (inside_inline2) >= 0)
+                                        has_inline_timing = true;
+                                }
+                                if (has_inline_timing) break;
                             }
                         }
                     }
                 }
             }
-            if (has_word_timing_line) return LyricsFormat.LRC_PLUS;
+            if (has_v1_word_timing_line || has_v2_word_timing_line) return LyricsFormat.LRC_PLUS;
             if (has_inline_timing) return LyricsFormat.EXTENDED_LRC;
         }
 
@@ -182,6 +211,182 @@ namespace G4 {
 
     // ── Parsers ───────────────────────────────────────────────────────
 
+    // ── v2 helpers: KV attr-block parsing ───────────────────────────
+    private void parse_attr_block (string inner, out string voice, out string style, out string effect, out string lang) {
+        voice = ""; style = ""; effect = ""; lang = "";
+        var trimmed = inner.strip ();
+        if (trimmed.length == 0) return;
+        // Legacy alias: no ':' and no '|' → treat as voice shorthand {v1}
+        if (!trimmed.contains (":") && !trimmed.contains ("|")) {
+            voice = trimmed;
+            return;
+        }
+        foreach (var attr in trimmed.split ("|")) {
+            var kv = attr.split (":", 2);
+            if (kv.length == 0) continue;
+            var key = kv[0].strip ().down ();
+            var val = kv.length > 1 ? kv[1].strip () : "";
+            if (val.length == 0) continue;
+            switch (key) {
+                case "voice": voice = val; break;
+                case "style": {
+                    // filter to known tokens, drop unknown per spec
+                    string[] allowed = { "bold", "italic", "underline", "strike" };
+                    var filtered = new StringBuilder ();
+                    bool first = true;
+                    foreach (var tok in val.split (",")) {
+                        var t = tok.strip ().down ();
+                        if (t.length == 0) continue;
+                        bool ok = false;
+                        foreach (var a in allowed) if (t == a) { ok = true; break; }
+                        if (!ok) continue;
+                        if (!first) filtered.append_c (',');
+                        filtered.append (t);
+                        first = false;
+                    }
+                    if (filtered.len > 0) {
+                        if (style.length > 0) style += "," + filtered.str;
+                        else style = filtered.str;
+                    }
+                    break;
+                }
+                case "effect": effect = val; break;
+                case "lang": lang = val; break;
+                default: break; // unknown → skip per spec
+            }
+        }
+    }
+
+    private void parse_lrc_plus_header_attrs (string rest, out string voice, out string style, out string effect, out string lang, out string text_without_block) {
+        voice = ""; style = ""; effect = ""; lang = "";
+        text_without_block = rest;
+        if (rest.has_prefix ("{")) {
+            var tag_end = rest.index_of_char ('}');
+            if (tag_end >= 0) {
+                var inner = rest.substring (1, tag_end - 1);
+                parse_attr_block (inner, out voice, out style, out effect, out lang);
+                text_without_block = rest.substring (tag_end + 1).strip ();
+            }
+        }
+    }
+
+    private bool looks_like_v2_timing_line (string line) {
+        var ls = line.strip ();
+        if (!ls.has_prefix ("<")) return false;
+        var gt = ls.index_of_char ('>');
+        if (gt < 0) return false;
+        var inside = ls.substring (1, gt - 1).strip ();
+        if (inside.length == 0) return false;
+        // v1 bulk contains '|' or word text with letters before colon; v2 inside is pure timestamp(s)
+        if (inside.contains ("|")) return false;
+        // quick check: first char must be digit for v2 timestamp
+        if (!inside[0].isdigit ()) return false;
+        // try single timestamp e.g. "00:10.00"
+        if (parse_timestamp (inside) >= 0) return true;
+        // try double timestamp e.g. "00:10.00:00:10.32"
+        // split by ":", expect 4 parts: mm, ss.xx, mm, ss.xx
+        var parts = inside.split (":");
+        if (parts.length == 4) {
+            var start_ts = "%s:%s".printf (parts[0], parts[1]);
+            var end_ts = "%s:%s".printf (parts[2], parts[3]);
+            if (parse_timestamp (start_ts) >= 0 && parse_timestamp (end_ts) >= 0) return true;
+        }
+        return false;
+    }
+
+    public LyricWord[] parse_word_timings_v2 (string timing_line, int64 line_end_ms = -1) {
+        LyricWord[] words = {};
+        // track whether end was explicitly supplied per word
+        bool[] has_explicit_end = {};
+        var rest = timing_line.strip ();
+        var pos = 0;
+        while (pos < rest.length) {
+            // skip WS
+            while (pos < rest.length && rest[pos].isspace ()) pos++;
+            if (pos >= rest.length) break;
+            if (rest[pos] != '<') {
+                // stray text without timing — could be word text containing '<' literal not encoded;
+                // per spec literal '<' should be &lt;, so treat stray as error and skip to next '<'
+                var next = rest.index_of_char ('<', pos);
+                if (next < 0) break;
+                // if no valid timestamp after, treat as text belonging to previous word — skip
+                pos = next;
+                continue;
+            }
+            var gt = rest.index_of_char ('>', pos);
+            if (gt < 0) break;
+            var inside = rest.substring (pos + 1, gt - pos - 1).strip ();
+            int64 start_ms = -1;
+            int64 end_ms = -1;
+            bool explicit_end = false;
+            // inside may be "00:10.00" or "00:10.00:00:10.32"
+            if (inside.contains (":")) {
+                var parts = inside.split (":");
+                if (parts.length == 4) {
+                    var start_ts = "%s:%s".printf (parts[0], parts[1]);
+                    var end_ts = "%s:%s".printf (parts[2], parts[3]);
+                    start_ms = parse_timestamp (start_ts);
+                    end_ms = parse_timestamp (end_ts);
+                    explicit_end = end_ms >= 0;
+                } else if (parts.length == 2) {
+                    start_ms = parse_timestamp (inside);
+                } else {
+                    start_ms = parse_timestamp (inside);
+                }
+            }
+            pos = gt + 1;
+            while (pos < rest.length && rest[pos].isspace ()) pos++;
+            // Optional per-word attr block {style:bold|effect:shake}
+            string w_style = ""; string w_effect = ""; string w_voice = ""; string w_lang = "";
+            if (pos < rest.length && rest[pos] == '{') {
+                var w_end = rest.index_of_char ('}', pos);
+                if (w_end >= 0) {
+                    var w_inner = rest.substring (pos + 1, w_end - pos - 1);
+                    parse_attr_block (w_inner, out w_voice, out w_style, out w_effect, out w_lang);
+                    // w_voice/lang on word-level is ignored per spec (voice per line only), but parse and drop
+                    pos = w_end + 1;
+                    while (pos < rest.length && rest[pos].isspace ()) pos++;
+                }
+            }
+            var word_start = pos;
+            var next_lt = rest.index_of_char ('<', pos);
+            string word_text;
+            if (next_lt < 0) {
+                word_text = rest.substring (word_start).strip ();
+                pos = rest.length;
+            } else {
+                word_text = rest.substring (word_start, next_lt - word_start).strip ();
+                pos = next_lt;
+            }
+            word_text = decode_html_entities (word_text);
+            if (word_text.length == 0 || start_ms < 0) continue;
+            double s = start_ms / 1000.0;
+            // if no explicit end, use sentinel -1 to allow inference
+            double e = explicit_end ? end_ms / 1000.0 : -1.0;
+            LyricWord w = { word_text, s, e, w_style, w_effect };
+            words += w;
+            has_explicit_end += explicit_end;
+        }
+        // Fix end times: if missing or invalid, infer from next start; last word from line_end or +3s
+        for (var i = 0; i < words.length; i++) {
+            bool need_fix = !has_explicit_end[i] || words[i].end_sec <= words[i].start_sec;
+            // also fix if explicit end overshoots next word
+            if (i < words.length - 1 && has_explicit_end[i] && words[i].end_sec > words[i+1].start_sec)
+                need_fix = true;
+            if (need_fix) {
+                if (i < words.length - 1) {
+                    words[i].end_sec = words[i+1].start_sec;
+                } else {
+                    if (line_end_ms >= 0)
+                        words[i].end_sec = line_end_ms / 1000.0;
+                    else
+                        words[i].end_sec = words[i].start_sec + 0.30;
+                }
+            }
+        }
+        return words;
+    }
+
     public LyricLine[] parse_lrc_plus (string lrc) {
         if (!lrc.contains ("<")) return {};
 
@@ -200,27 +405,55 @@ namespace G4 {
             var timestamp = line.substring (1, close - 1);
             var rest = line.substring (close + 1).strip ();
 
-            var voice_role = "";
-            if (rest.has_prefix ("{")) {
-                var tag_end = rest.index_of_char ('}');
-                if (tag_end >= 0) {
-                    voice_role = rest.substring (1, tag_end - 1);
-                    rest = rest.substring (tag_end + 1).strip ();
-                }
-            }
+            string voice_role, style, effect, lang;
+            string text_part;
+            parse_lrc_plus_header_attrs (rest, out voice_role, out style, out effect, out lang, out text_part);
 
             var ms = parse_timestamp (timestamp);
             if (ms < 0) continue;
 
-            var decoded_rest = decode_html_entities (rest);
+            var decoded_rest = decode_html_entities (text_part);
 
             LyricWord[] words = {};
+            bool has_timing = false;
             if (i < raw_lines.length && raw_lines[i].strip ().has_prefix ("<")) {
-                words = parse_word_timings (raw_lines[i].strip ());
-                i++;
+                var timing_line = raw_lines[i].strip ();
+                if (looks_like_v2_timing_line (timing_line)) {
+                    // infer line_end for last word without explicit end: look ahead to next header timestamp
+                    int64 line_end_ms = -1;
+                    for (var j = i + 1; j < raw_lines.length; j++) {
+                        var peek = raw_lines[j].strip ();
+                        if (peek.length < 5 || peek[0] != '[') continue;
+                        var pc = peek.index_of_char (']');
+                        if (pc < 0) continue;
+                        var pts = peek.substring (1, pc - 1);
+                        var pms = parse_timestamp (pts);
+                        if (pms >= 0) { line_end_ms = pms; break; }
+                    }
+                    if (line_end_ms < 0 && timing_line.length > 0) {
+                        // fallback: last word start + 3s will be handled inside parse_word_timings_v2 via -1
+                    }
+                    words = parse_word_timings_v2 (timing_line, line_end_ms);
+                } else {
+                    words = parse_word_timings (timing_line);
+                }
+                has_timing = words.length > 0;
+                // Also treat as timing line consumed even if empty parse (to skip it)
+                if (timing_line.has_prefix ("<"))
+                    i++;
+            }
+            // Strict isolation: no {…} without timing line
+            if (!has_timing) {
+                voice_role = "";
+                style = "";
+                effect = "";
+                lang = "";
+                // If header had attr-block but no timing, the text_part already stripped the block;
+                // For strict legacy safety we keep stripped text (attrs hidden) but clear attrs —
+                // plain LRC readers would have seen attrs as text, so lint should warn producer.
             }
 
-            LyricLine l = { ms, decoded_rest, words, voice_role };
+            LyricLine l = { ms, decoded_rest, words, voice_role, style, effect, lang };
             result += l;
         }
         return result;
@@ -285,7 +518,7 @@ namespace G4 {
                     word_text = decode_html_entities (word_text).strip ();
 
                     if (word_text.length > 0 && word_start_ms >= 0) {
-                        LyricWord w = { word_text, word_start_ms / 1000.0, 0.0 };
+                        LyricWord w = { word_text, word_start_ms / 1000.0, 0.0, "", "" };
                         words += w;
                         text_sb.append (word_text);
                         text_sb.append_c (' ');
@@ -304,7 +537,7 @@ namespace G4 {
             if (words.length > 0)
                 words[words.length - 1].end_sec = line_end_sec;
 
-            LyricLine l = { line_ms, text_sb.str.strip (), words, voice_role };
+            LyricLine l = { line_ms, text_sb.str.strip (), words, voice_role, "", "", "" };
             result += l;
         }
         return result;
@@ -341,11 +574,17 @@ namespace G4 {
             LyricWord[] words = {};
             if (i < raw_lines.length && raw_lines[i].strip ().has_prefix ("<")) {
                 words = parse_word_timings (raw_lines[i].strip ());
-                i++;
+                // strict isolation: if no words parsed, drop legacy voice on plain LRC line
+                if (words.length == 0)
+                    voice_role = "";
+                else
+                    i++;
+            } else {
+                voice_role = "";
             }
 
             var decoded_rest = decode_html_entities (rest);
-            LyricLine l = { ms, decoded_rest, words, voice_role };
+            LyricLine l = { ms, decoded_rest, words, voice_role, "", "", "" };
             result += l;
         }
         return result;
@@ -360,7 +599,7 @@ namespace G4 {
                         ? trimmed.index_of_char (']') - 1 : 0)) >= 0)
                 continue;
             LyricWord[] empty_words = {};
-            LyricLine l = { -1, trimmed, empty_words, "" };
+            LyricLine l = { -1, trimmed, empty_words, "", "", "", "" };
             result += l;
         }
         var start = 0;
@@ -430,7 +669,7 @@ namespace G4 {
                 var text = p->get_content ();
                 if (text.strip ().length > 0) {
                     LyricWord[] empty_words = {};
-                    LyricLine l = { -1, text.strip (), empty_words, "" };
+                    LyricLine l = { -1, text.strip (), empty_words, "", "", "", "" };
                     result += l;
                 }
             }
@@ -480,7 +719,8 @@ namespace G4 {
                                 LyricWord w = {
                                     w_content,
                                     ttml_time_to_ms ((!)w_begin) / 1000.0,
-                                    ttml_time_to_ms ((!)w_end) / 1000.0
+                                    ttml_time_to_ms ((!)w_end) / 1000.0,
+                                    "", ""
                                 };
                                 bg_words += w;
                             }
@@ -492,7 +732,8 @@ namespace G4 {
                             LyricWord w = {
                                 w_text,
                                 ttml_time_to_ms ((!)w_begin) / 1000.0,
-                                ttml_time_to_ms ((!)w_end) / 1000.0
+                                ttml_time_to_ms ((!)w_end) / 1000.0,
+                                "", ""
                             };
                             main_words += w;
                             line_text_sb.append (w_text);
@@ -508,7 +749,7 @@ namespace G4 {
                 var line_text = line_text_sb.str.strip ();
                 if (line_text.length == 0) continue;
 
-                LyricLine main_line = { ms, line_text, main_words, voice_role };
+                LyricLine main_line = { ms, line_text, main_words, voice_role, "", "", "" };
                 result += main_line;
 
                 if (bg_words.length > 0) {
@@ -517,7 +758,7 @@ namespace G4 {
                         bg_text_sb.append (bw.text);
                         bg_text_sb.append_c (' ');
                     }
-                    LyricLine bg_line = { ms, bg_text_sb.str.strip (), bg_words, "bg" };
+                    LyricLine bg_line = { ms, bg_text_sb.str.strip (), bg_words, "bg", "", "", "" };
                     result += bg_line;
                 }
             }
@@ -565,7 +806,7 @@ namespace G4 {
                             var w_end = ws->get_prop ("end");
                             var w_content = ws->get_content ();
                             if (w_begin != null && w_end != null && w_content.length > 0) {
-                                LyricWord w = { w_content, ttml_time_to_ms ((!)w_begin) / 1000.0, ttml_time_to_ms ((!)w_end) / 1000.0 };
+                                LyricWord w = { w_content, ttml_time_to_ms ((!)w_begin) / 1000.0, ttml_time_to_ms ((!)w_end) / 1000.0, "", "" };
                                 bg_words += w;
                                 bg_text_sb.append (w_content);
                                 bg_text_sb.append_c (' ');
@@ -579,7 +820,7 @@ namespace G4 {
                             var w_begin = ttml_time_to_ms ((!)w_begin_str);
                             var w_end = ttml_time_to_ms ((!)w_end_str);
                             if (w_begin >= 0 && w_end >= 0) {
-                                LyricWord w = { w_text, w_begin / 1000.0, w_end / 1000.0 };
+                                LyricWord w = { w_text, w_begin / 1000.0, w_end / 1000.0, "", "" };
                                 main_words += w;
                                 main_text_sb.append (w_text);
                                 main_text_sb.append_c (' ');
@@ -589,12 +830,12 @@ namespace G4 {
                 }
 
                 if (main_words.length > 0 || main_text_sb.str.strip ().length > 0) {
-                    LyricLine l = { line_ms, main_text_sb.str.strip (), main_words, voice_role };
+                    LyricLine l = { line_ms, main_text_sb.str.strip (), main_words, voice_role, "", "", "" };
                     result += l;
                 }
 
                 if (bg_words.length > 0) {
-                    LyricLine bg_line = { line_ms, bg_text_sb.str.strip (), bg_words, "bg" };
+                    LyricLine bg_line = { line_ms, bg_text_sb.str.strip (), bg_words, "bg", "", "", "" };
                     result += bg_line;
                 }
             }
@@ -615,7 +856,7 @@ namespace G4 {
             var segments = part.split (":");
             if (segments.length >= 3) {
                 var text = decode_html_entities (segments[0]);
-                LyricWord w = { text, double.parse (segments[1]), double.parse (segments[2]) };
+                LyricWord w = { text, double.parse (segments[1]), double.parse (segments[2]), "", "" };
                 words += w;
             }
         }
@@ -624,6 +865,7 @@ namespace G4 {
 
     public string decode_html_entities (string s) {
         return s.replace ("&#x27;", "'")
+                .replace ("&apos;", "'")
                 .replace ("&quot;", "\"")
                 .replace ("&amp;", "&")
                 .replace ("&lt;", "<")
@@ -666,7 +908,84 @@ namespace G4 {
 
     // ── Serializer ────────────────────────────────────────────────────
 
+    public string format_ms_as_timestamp (int64 ms) {
+        int64 mins = ms / 1000 / 60;
+        int64 secs = (ms / 1000) % 60;
+        int64 cs = (ms % 1000) / 10;
+        // truncates to centiseconds (10ms granularity) to match v1 spec LRCPLUS_SPEC.md:108
+        // preserves backward compat; parsing accepts 1-3 frac digits so cs file round-trips
+        return "%02lld:%02lld.%02lld".printf (mins, secs, cs);
+    }
+
+    public string format_sec_as_timestamp (double sec) {
+        int64 ms = (int64) (sec * 1000);
+        return format_ms_as_timestamp (ms);
+    }
+
+    private string build_header_attr_block (LyricLine l) {
+        // Strict isolation already enforced on parse; serialize only if words exist
+        if (l.words.length == 0) return "";
+        var parts = new StringBuilder ();
+        if (l.voice_role.length > 0) {
+            parts.append ("voice:%s".printf (l.voice_role));
+        }
+        if (l.style.length > 0) {
+            if (parts.len > 0) parts.append_c ('|');
+            parts.append ("style:%s".printf (l.style));
+        }
+        if (l.effect.length > 0) {
+            if (parts.len > 0) parts.append_c ('|');
+            parts.append ("effect:%s".printf (l.effect));
+        }
+        if (l.lang.length > 0) {
+            if (parts.len > 0) parts.append_c ('|');
+            parts.append ("lang:%s".printf (l.lang));
+        }
+        if (parts.len == 0) return "";
+        return "{%s}".printf (parts.str);
+    }
+
     public string serialize_to_lrc_plus (LyricLine[] lines) {
+        var sb = new StringBuilder ();
+        foreach (var l in lines) {
+            if (l.time_ms < 0) continue;
+            sb.append ("[%s]".printf (format_ms_as_timestamp (l.time_ms)));
+            var block = build_header_attr_block (l);
+            if (block.length > 0)
+                sb.append (block);
+            sb.append (l.text);
+            sb.append_c ('\n');
+
+            if (l.words.length > 0) {
+                // v2 inline Variant A absolute: <mm:ss.xx:mm:ss.xx>{style:}Word ...
+                for (var wi = 0; wi < l.words.length; wi++) {
+                    var w = l.words[wi];
+                    var start_ts = format_sec_as_timestamp (w.start_sec);
+                    var end_ts = format_sec_as_timestamp (w.end_sec);
+                    sb.append ("<%s:%s>".printf (start_ts, end_ts));
+                    string w_block = "";
+                    if (w.style.length > 0 || w.effect.length > 0) {
+                        var wb = new StringBuilder ();
+                        bool wfirst = true;
+                        if (w.style.length > 0) { wb.append ("style:%s".printf (w.style)); wfirst = false; }
+                        if (w.effect.length > 0) {
+                            if (!wfirst) wb.append_c ('|');
+                            wb.append ("effect:%s".printf (w.effect));
+                        }
+                        w_block = "{%s}".printf (wb.str);
+                    }
+                    if (w_block.length > 0) sb.append (w_block);
+                    sb.append (w.text);
+                    if (wi < l.words.length - 1) sb.append_c (' ');
+                }
+                sb.append_c ('\n');
+            }
+        }
+        return sb.str;
+    }
+
+    // Keep v1 bulk serializer for compat/tests if needed
+    public string serialize_to_lrc_plus_v1 (LyricLine[] lines) {
         var sb = new StringBuilder ();
         foreach (var l in lines) {
             if (l.time_ms < 0) continue;
@@ -678,7 +997,6 @@ namespace G4 {
                 sb.append ("{%s}".printf (l.voice_role));
             sb.append (l.text);
             sb.append_c ('\n');
-
             if (l.words.length > 0) {
                 sb.append_c ('<');
                 for (var wi = 0; wi < l.words.length; wi++) {

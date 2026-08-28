@@ -293,23 +293,52 @@ namespace G4 {
             ((!)label).set_label (markup);
         }
 
+        private string style_attrs_for_word (LyricLine line, LyricWord word) {
+            // Combine line-level and word-level style (comma-list), dedup, map to Pango attrs
+            // style tokens: bold, italic, underline, strike — unknown already filtered on parse
+            var combined = "";
+            if (line.style.length > 0) combined = line.style;
+            if (word.style.length > 0) {
+                if (combined.length > 0) combined += "," + word.style;
+                else combined = word.style;
+            }
+            var attrs = new StringBuilder ();
+            foreach (var tok in combined.split (",")) {
+                var t = tok.strip ().down ();
+                if (t == "bold") attrs.append (" weight='bold'");
+                else if (t == "italic") attrs.append (" style='italic'");
+                else if (t == "underline") attrs.append (" underline='single'");
+                else if (t == "strike") attrs.append (" strikethrough='true'");
+                // unknown effect → ignored (graceful no-op)
+            }
+            // effect currently no visual — kept for future animation hooks; skip unknown
+            return attrs.str;
+        }
+
         private string build_line_markup_faded (LyricLine line, double sec, double progress) {
             if (line.words.length == 0) {
-                return Markup.escape_text (line.text.length > 0 ? line.text : "\u00B7");
+                var txt = Markup.escape_text (line.text.length > 0 ? line.text : "\u00B7");
+                LyricWord empty = { "", 0, 0, "", "" };
+                var la = style_attrs_for_word (line, empty);
+                if (la.length > 0) return "<span%s>%s</span>".printf (la, txt);
+                return txt;
             }
             var sb = new StringBuilder ();
             foreach (var word in line.words) {
                 var escaped = Markup.escape_text (word.text);
+                var extra = style_attrs_for_word (line, word);
+                // active underline handled via extra already; faded active also gets underline if not styled
+                bool has_underline = extra.contains ("underline");
                 if (sec < 0) {
-                    sb.append ("<span alpha='40%%'>%s</span> ".printf (escaped));
+                    sb.append ("<span alpha='40%%'%s>%s</span> ".printf (extra, escaped));
                 } else if (sec + 0.05 >= word.start_sec && sec < word.end_sec) {
-                    // fade from 40% → 100% over 100ms, centered 50ms before start
                     var alpha = 40 + (int) (60 * progress);
-                    sb.append ("<span alpha='%d%%' underline='single'>%s</span> ".printf (alpha, escaped));
+                    var u = has_underline ? "" : " underline='single'";
+                    sb.append ("<span alpha='%d%%'%s%s>%s</span> ".printf (alpha, extra, u, escaped));
                 } else if (sec >= word.end_sec) {
-                    sb.append ("<span alpha='65%%'>%s</span> ".printf (escaped));
+                    sb.append ("<span alpha='65%%'%s>%s</span> ".printf (extra, escaped));
                 } else {
-                    sb.append ("<span alpha='40%%'>%s</span> ".printf (escaped));
+                    sb.append ("<span alpha='40%%'%s>%s</span> ".printf (extra, escaped));
                 }
             }
             return sb.str.strip ();
@@ -512,19 +541,26 @@ namespace G4 {
 
         private string build_line_markup (LyricLine line, double sec) {
             if (line.words.length == 0) {
-                return Markup.escape_text (line.text.length > 0 ? line.text : "·");
+                var txt = Markup.escape_text (line.text.length > 0 ? line.text : "·");
+                LyricWord empty = { "", 0, 0, "", "" };
+                var la = style_attrs_for_word (line, empty);
+                if (la.length > 0) return "<span%s>%s</span>".printf (la, txt);
+                return txt;
             }
             var sb = new StringBuilder ();
             foreach (var word in line.words) {
                 var escaped = Markup.escape_text (word.text);
+                var extra = style_attrs_for_word (line, word);
+                bool has_underline = extra.contains ("underline");
                 if (sec < 0) {
-                    sb.append ("<span alpha='40%%'>%s</span> ".printf (escaped));
+                    sb.append ("<span alpha='40%%'%s>%s</span> ".printf (extra, escaped));
                 } else if (sec >= word.start_sec && sec < word.end_sec) {
-                    sb.append ("<span alpha='100%%' underline='single'>%s</span> ".printf (escaped));
+                    var u = has_underline ? "" : " underline='single'";
+                    sb.append ("<span alpha='100%%'%s%s>%s</span> ".printf (extra, u, escaped));
                 } else if (sec >= word.end_sec) {
-                    sb.append ("<span alpha='65%%'>%s</span> ".printf (escaped));
+                    sb.append ("<span alpha='65%%'%s>%s</span> ".printf (extra, escaped));
                 } else {
-                    sb.append ("<span alpha='40%%'>%s</span> ".printf (escaped));
+                    sb.append ("<span alpha='40%%'%s>%s</span> ".printf (extra, escaped));
                 }
             }
             return sb.str.strip ();
@@ -630,6 +666,31 @@ namespace G4 {
 
         // ── Edit dialog ──────────────────────────────────────────────
 
+        private string lint_edit_lyrics (string raw) {
+            // Warn if any header line has {…} but is not followed by a timing line
+            var sb = new StringBuilder ();
+            var raw_lines = raw.split ("\n");
+            for (var i = 0; i < raw_lines.length; i++) {
+                var ls = raw_lines[i].strip ();
+                if (ls.length < 5 || ls[0] != '[' || !ls.contains ("]")) continue;
+                var close = ls.index_of_char (']');
+                var after = ls.substring (close + 1).strip ();
+                if (!after.has_prefix ("{") || !after.contains ("}")) continue;
+                // check if next non-empty line is a timing line
+                bool next_is_timing = false;
+                for (var j = i + 1; j < raw_lines.length; j++) {
+                    var peek = raw_lines[j].strip ();
+                    if (peek.length == 0) continue;
+                    next_is_timing = peek.has_prefix ("<");
+                    break;
+                }
+                if (!next_is_timing) {
+                    sb.append ("⚠ %s: attrs will be stripped (no timing line)\n".printf (ls));
+                }
+            }
+            return sb.str;
+        }
+
         private void open_edit_dialog () {
             var dialog = new Adw.Dialog ();
             dialog.title = _("Edit Lyrics");
@@ -658,11 +719,26 @@ namespace G4 {
             text_view.buffer.text = _current_raw;
             scroll.child = text_view;
 
-            toolbar_view.content = scroll;
+            var lint_label = new Gtk.Label (lint_edit_lyrics (_current_raw));
+            lint_label.xalign = 0;
+            lint_label.wrap = true;
+            lint_label.add_css_class ("caption");
+            lint_label.add_css_class ("warning");
+            lint_label.visible = lint_label.label.length > 0;
+            lint_label.margin_start = 12;
+            lint_label.margin_end = 12;
+
+            var content_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
+            content_box.append (scroll);
+            content_box.append (lint_label);
+
+            toolbar_view.content = content_box;
             dialog.child = toolbar_view;
 
             save_btn.clicked.connect (() => {
                 var new_raw = text_view.buffer.text;
+                // strict isolation: parser strips attrs on plain lines, so save the raw
+                // and the parser will handle stripping on re-parse
                 _current_raw = new_raw;
                 lyrics_save_cache (_current_uri, new_raw, _provider_label.label, _offset_ms);
                 var edit_format = detect_lyrics_format (new_raw);

@@ -61,10 +61,35 @@ namespace G4 {
     private string convert_richsync_json (Json.Array lyrics_arr, string type) {
         var sb = new StringBuilder ();
         if (type == "Word") {
-            int64 prev_time = -1;
-            var current_line_words = new StringBuilder ();
-            var current_line_text = new StringBuilder ();
+            // v2 inline Variant A absolute: collect per-line word timings then emit
+            // <mm:ss.xx:mm:ss.xx>Word <mm:ss.xx:mm:ss.xx>Word ...
+            int64 line_start_ms = -1;
+            string[] line_texts = {};
+            int64[] line_times = {};
 
+            void flush_line () {
+                if (line_texts.length == 0) return;
+                // header timestamp = first word's time (or line_start_ms)
+                int64 header_ms = line_start_ms >= 0 ? line_start_ms : line_times[0];
+                sb.append ("[%s]%s\n".printf (format_ms_as_timestamp (header_ms), string.joinv (" ", line_texts)));
+                // word timing line: each word with start:end absolute
+                for (var wi = 0; wi < line_texts.length; wi++) {
+                    var start_ms = line_times[wi];
+                    int64 end_ms;
+                    if (wi + 1 < line_times.length) {
+                        end_ms = line_times[wi + 1];
+                    } else {
+                        end_ms = start_ms + 300; // last word fallback
+                    }
+                    var start_ts = format_ms_as_timestamp (start_ms);
+                    var end_ts = format_ms_as_timestamp (end_ms);
+                    if (wi > 0) sb.append_c (' ');
+                    sb.append ("<%s:%s>%s".printf (start_ts, end_ts, line_texts[wi]));
+                }
+                sb.append_c ('\n');
+            }
+
+            int64 prev_time = -1;
             lyrics_arr.foreach_element ((arr, i, node) => {
                 var obj_n = node.get_object ();
                 if (obj_n == null) return;
@@ -75,38 +100,21 @@ namespace G4 {
                 if (text.length == 0) return;
 
                 bool new_line = (prev_time < 0) || (time_ms - prev_time > 2000);
-                if (new_line) {
-                    if (current_line_text.len > 0) {
-                        int64 mins = prev_time / 1000 / 60;
-                        int64 secs = (prev_time / 1000) % 60;
-                        int64 cs = (prev_time % 1000) / 10;
-                        sb.append ("[%02lld:%02lld.%02lld]%s\n".printf (
-                            mins, secs, cs, current_line_text.str.strip ()));
-                        if (current_line_words.len > 0)
-                            sb.append ("<%s>\n".printf (current_line_words.str));
-                    }
-                    current_line_text = new StringBuilder ();
-                    current_line_words = new StringBuilder ();
+                if (new_line && line_texts.length > 0) {
+                    flush_line ();
+                    line_texts = {};
+                    line_times = {};
+                    line_start_ms = -1;
                 }
-
-                if (current_line_text.len > 0) current_line_text.append_c (' ');
-                current_line_text.append (text);
-
-                double start_sec = time_ms / 1000.0;
-                if (current_line_words.len > 0) current_line_words.append_c ('|');
-                current_line_words.append ("%s:%.3f:%.3f".printf (text, start_sec, start_sec + 0.3));
+                if (line_start_ms < 0) line_start_ms = time_ms;
+                line_texts += text;
+                line_times += time_ms;
 
                 prev_time = time_ms;
             });
 
-            if (current_line_text.len > 0) {
-                int64 mins = prev_time / 1000 / 60;
-                int64 secs = (prev_time / 1000) % 60;
-                int64 cs = (prev_time % 1000) / 10;
-                sb.append ("[%02lld:%02lld.%02lld]%s\n".printf (
-                    mins, secs, cs, current_line_text.str.strip ()));
-                if (current_line_words.len > 0)
-                    sb.append ("<%s>\n".printf (current_line_words.str));
+            if (line_texts.length > 0) {
+                flush_line ();
             }
         } else {
             lyrics_arr.foreach_element ((arr, i, node) => {

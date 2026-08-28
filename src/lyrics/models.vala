@@ -4,6 +4,8 @@ namespace G4 {
         public string text;
         public double start_sec;
         public double end_sec;
+        public string style;
+        public string effect;
     }
 
     public struct LyricLine {
@@ -11,6 +13,9 @@ namespace G4 {
         public string text;
         public LyricWord[] words;
         public string voice_role;
+        public string style;
+        public string effect;
+        public string lang;
     }
 
     public struct LyricsCandidate {
