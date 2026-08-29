@@ -134,10 +134,19 @@ namespace G4 {
             var settings = app.settings;
             settings.bind ("sort-mode", this, "sort-mode", SettingsBindFlags.DEFAULT);
             _library_uri = settings.get_string ("library-uri");
-            initialize_library_page ();
             load_tracks_list ();
             header_bar.pack_end (_tracks_play_btn);
             header_bar.pack_end (_tracks_shuffle_btn);
+            initialize_library_page ();
+            // Ensure header buttons reflect current page (fixes leftover sort UI on Tracks at launch)
+            {
+                var cur = stack_view.visible_child;
+                bool on_tracks = (cur == _tracks_list);
+                // Also handle case where cur is a Stack wrapper (should not happen for Tracks)
+                sort_btn.visible = false;
+                _tracks_play_btn.visible = on_tracks;
+                _tracks_shuffle_btn.visible = on_tracks;
+            }
         }
 
         public MusicList current_list {
@@ -278,7 +287,6 @@ namespace G4 {
             _tracks_play_btn.icon_name = "media-playback-start-symbolic";
             _tracks_play_btn.tooltip_text = _("Play All");
             _tracks_play_btn.add_css_class ("flat");
-            _tracks_play_btn.visible = false;
             _tracks_play_btn.clicked.connect (() => {
                 _current_list = _tracks_list;
                 play_current_list (0, false);
@@ -287,7 +295,6 @@ namespace G4 {
             _tracks_shuffle_btn.icon_name = "media-playlist-shuffle-symbolic";
             _tracks_shuffle_btn.tooltip_text = _("Shuffle All");
             _tracks_shuffle_btn.add_css_class ("flat");
-            _tracks_shuffle_btn.visible = false;
             _tracks_shuffle_btn.clicked.connect (() => {
                 _current_list = _tracks_list;
                 play_current_list (0, true);
