@@ -87,8 +87,8 @@ namespace G4 {
     public class MusicCell : MusicWidget {
         public MusicCell () {
             orientation = Gtk.Orientation.VERTICAL;
-            margin_top = 10;
-            margin_bottom = 10;
+            margin_top = 5;
+            margin_bottom = 5;
             width_request = 200;
 
             var overlay = new Gtk.Overlay ();
@@ -126,11 +126,11 @@ namespace G4 {
         public MusicEntry (int density = 1) {
             width_request = 324;
 
-            var cover_margin = density >= 2 ? 6 : (density == 1 ? 4 : 3);
+            var cover_margin = density >= 2 ? 3 : (density == 1 ? 2 : 1);
             var cover_size = density >= 2 ? 56 : (density == 1 ? 48 : 36);
-            var vbox_spacing = density >= 2 ? 8 : (density == 1 ? 6 : 2);
-            margin_top = density >= 2 ? 10 : (density == 1 ? 6 : 0);
-            margin_bottom = density >= 2 ? 10 : (density == 1 ? 6 : 0);
+            var vbox_spacing = density >= 2 ? 4 : (density == 1 ? 3 : 1);
+            margin_top = density >= 2 ? 5 : (density == 1 ? 3 : 0);
+            margin_bottom = density >= 2 ? 5 : (density == 1 ? 3 : 0);
 
             _image.margin_top = cover_margin;
             _image.margin_bottom = cover_margin;

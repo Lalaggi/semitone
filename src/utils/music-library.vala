@@ -475,13 +475,73 @@ namespace G4 {
     }
 
     public bool merge_items_to_store (ListStore store, GenericArray<Music> arr, ref uint position) {
+        // Preserve original insertion point for accurate adjustment
+        uint orig_pos = position;
+        // Build lookup for items to be inserted (pointer equality)
+        var map = new GenericSet<Object?> (direct_hash, direct_equal);
+        arr.foreach ((obj) => map.add (obj));
+        // Count how many existing instances before orig_pos will be removed
+        uint removed_before = 0;
+        uint n_items = store.get_n_items ();
+        uint scan_limit = uint.min (orig_pos, n_items);
+        for (uint i = 0; i < scan_limit; i++) {
+            if (map.contains (store.get_item (i)))
+                removed_before++;
+        }
+        // Remember original index for single-item no-op detection
+        int orig_single_idx = -1;
+        if (arr.length == 1) {
+            uint idx;
+            if (store.find (arr[0], out idx))
+                orig_single_idx = (int) idx;
+        }
+        // For queue single-item move, use single range splice to preserve scroll and animate (Metrolist-like)
+        if (arr.length == 1 && orig_single_idx != -1) {
+            int from = orig_single_idx;
+            int to = (int) orig_pos;
+            to = to.clamp (0, (int) store.get_n_items ());
+            if (from == to || from + 1 == to) {
+                position = (uint) from;
+                return false;
+            }
+            GenericArray<Music> new_order = new GenericArray<Music> ();
+            if (from < to) {
+                // Move down: [from, to) -> [from+1, to) + [from]
+                for (int i = from + 1; i < to; i++)
+                    new_order.add ((Music) store.get_item ((uint) i));
+                new_order.add ((Music) store.get_item ((uint) from));
+                uint n = (uint) (to - from);
+                store.splice ((uint) from, n, to_object_array (new_order));
+                position = (uint) (to - 1);
+            } else {
+                // Move up: [to, from+1) -> [from] + [to, from)
+                new_order.add ((Music) store.get_item ((uint) from));
+                for (int i = to; i < from; i++)
+                    new_order.add ((Music) store.get_item ((uint) i));
+                uint n = (uint) (from - to + 1);
+                store.splice ((uint) to, n, to_object_array (new_order));
+                position = (uint) to;
+            }
+            return true;
+        }
         var first_pos = -1;
         var removed = remove_items_from_store (store, arr, out first_pos);
-        if (first_pos >= 0 && position >= first_pos + removed)
-            position -= removed;
+        // Adjust insertion point by number actually removed before it
+        if (orig_pos >= removed_before)
+            position = orig_pos - removed_before;
+        else
+            position = 0;
         position = uint.min (position, store.get_n_items ());
         store.splice (position, 0, to_object_array (arr));
-        return !(arr.length == 1 && arr[0] == store.get_item (first_pos));
+        // No-op detection: single item already at target stays at same place
+        if (arr.length == 1 && orig_single_idx != -1 && orig_single_idx == (int) position) {
+            // Item was already at insertion point; after remove+insert order unchanged
+            // Also covers case where item was immediately after current (orig == pos)
+            return false;
+        }
+        // For scattered multi-item case, if all items were already contiguous at orig_pos
+        // we could return false, but keep as changed to ensure UI updates
+        return true;
     }
 
     public int remove_items_from_store (ListStore store, GenericArray<Music> arr, out int first_pos = null) {

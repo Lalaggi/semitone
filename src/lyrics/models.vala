@@ -13,6 +13,7 @@ namespace G4 {
         public string text;
         public LyricWord[] words;
         public string voice_role;
+        public string voice_display;
         public string style;
         public string effect;
         public string lang;

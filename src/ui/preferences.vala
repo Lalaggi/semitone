@@ -14,6 +14,8 @@ namespace G4 {
         [GtkChild]
         unowned Adw.ComboRow blur_row;
         [GtkChild]
+        unowned Adw.ComboRow sheet_position_row;
+        [GtkChild]
         unowned Gtk.Scale scale_slider;
         [GtkChild]
         unowned Gtk.Scale density_slider;
@@ -56,6 +58,10 @@ namespace G4 {
         [GtkChild]
         unowned Gtk.SpinButton lyrics_autoscroll_timeout_btn;
         [GtkChild]
+        unowned Adw.ComboRow lyrics_voice_display_row;
+        [GtkChild]
+        unowned Gtk.Switch lyrics_voice_colors_btn;
+        [GtkChild]
         unowned Adw.ActionRow lyrics_auto_indicator;
         [GtkChild]
         unowned Adw.PreferencesGroup lyrics_providers_group;
@@ -71,6 +77,8 @@ namespace G4 {
 
             blur_row.model = new Gtk.StringList ({_("Never"), _("Always"), _("Art Only")});
             _settings.bind ("blur-mode", blur_row, "selected", SettingsBindFlags.DEFAULT);
+            sheet_position_row.model = new Gtk.StringList ({_("Cover both panes"), _("Only left pane"), _("Only right pane")});
+            _settings.bind ("sheet-position", sheet_position_row, "selected", SettingsBindFlags.DEFAULT);
             scale_slider.set_value (_settings.get_double ("ui-scale"));
             scale_slider.value_changed.connect (() => {
                 var scale = scale_slider.get_value ();
@@ -125,6 +133,10 @@ namespace G4 {
             lyrics_autoscroll_timeout_btn.value_changed.connect (() => {
                 _settings.set_int ("lyrics-autoscroll-timeout", (int) lyrics_autoscroll_timeout_btn.get_value ());
             });
+
+            lyrics_voice_display_row.model = new Gtk.StringList ({_("None"), _("Coded name"), _("Pretty name (recommended)")});
+            _settings.bind ("lyrics-voice-display-mode", lyrics_voice_display_row, "selected", SettingsBindFlags.DEFAULT);
+            _settings.bind ("lyrics-voice-colors-enabled", lyrics_voice_colors_btn, "active", SettingsBindFlags.DEFAULT);
 
             lyrics_auto_select_btn.notify["active"].connect (() => {
                 update_auto_indicator ();

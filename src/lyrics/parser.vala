@@ -212,13 +212,20 @@ namespace G4 {
     // ── Parsers ───────────────────────────────────────────────────────
 
     // ── v2 helpers: KV attr-block parsing ───────────────────────────
-    private void parse_attr_block (string inner, out string voice, out string style, out string effect, out string lang) {
-        voice = ""; style = ""; effect = ""; lang = "";
+    private string strip_quotes (string s) {
+        var t = s.strip ();
+        if (t.length >= 2 && ((t[0] == '"' && t[t.length-1] == '"') || (t[0] == '\'' && t[t.length-1] == '\'')))
+            return t.substring (1, t.length - 2).strip ();
+        return t;
+    }
+
+    private void parse_attr_block (string inner, out string voice, out string voice_display, out string style, out string effect, out string lang) {
+        voice = ""; voice_display = ""; style = ""; effect = ""; lang = "";
         var trimmed = inner.strip ();
         if (trimmed.length == 0) return;
         // Legacy alias: no ':' and no '|' → treat as voice shorthand {v1}
         if (!trimmed.contains (":") && !trimmed.contains ("|")) {
-            voice = trimmed;
+            voice = strip_quotes (trimmed);
             return;
         }
         foreach (var attr in trimmed.split ("|")) {
@@ -228,7 +235,23 @@ namespace G4 {
             var val = kv.length > 1 ? kv[1].strip () : "";
             if (val.length == 0) continue;
             switch (key) {
-                case "voice": voice = val; break;
+                case "voice": {
+                    // Support voice:id[,Display] or voice:id,"Display" -> split on comma
+                    var parts = val.split (",", 2);
+                    voice = strip_quotes (parts[0].strip ());
+                    if (parts.length > 1) {
+                        var disp = strip_quotes (parts[1].strip ());
+                        if (disp.length > 0) voice_display = disp;
+                    }
+                    break;
+                }
+                case "display":
+                case "name":
+                case "label":
+                case "agent-name": {
+                    voice_display = strip_quotes (val);
+                    break;
+                }
                 case "style": {
                     // filter to known tokens, drop unknown per spec
                     string[] allowed = { "bold", "italic", "underline", "strike" };
@@ -257,14 +280,14 @@ namespace G4 {
         }
     }
 
-    private void parse_lrc_plus_header_attrs (string rest, out string voice, out string style, out string effect, out string lang, out string text_without_block) {
-        voice = ""; style = ""; effect = ""; lang = "";
+    private void parse_lrc_plus_header_attrs (string rest, out string voice, out string voice_display, out string style, out string effect, out string lang, out string text_without_block) {
+        voice = ""; voice_display = ""; style = ""; effect = ""; lang = "";
         text_without_block = rest;
         if (rest.has_prefix ("{")) {
             var tag_end = rest.index_of_char ('}');
             if (tag_end >= 0) {
                 var inner = rest.substring (1, tag_end - 1);
-                parse_attr_block (inner, out voice, out style, out effect, out lang);
+                parse_attr_block (inner, out voice, out voice_display, out style, out effect, out lang);
                 text_without_block = rest.substring (tag_end + 1).strip ();
             }
         }
@@ -337,12 +360,12 @@ namespace G4 {
             pos = gt + 1;
             while (pos < rest.length && rest[pos].isspace ()) pos++;
             // Optional per-word attr block {style:bold|effect:shake}
-            string w_style = ""; string w_effect = ""; string w_voice = ""; string w_lang = "";
+            string w_style = ""; string w_effect = ""; string w_voice = ""; string w_voice_display = ""; string w_lang = "";
             if (pos < rest.length && rest[pos] == '{') {
                 var w_end = rest.index_of_char ('}', pos);
                 if (w_end >= 0) {
                     var w_inner = rest.substring (pos + 1, w_end - pos - 1);
-                    parse_attr_block (w_inner, out w_voice, out w_style, out w_effect, out w_lang);
+                    parse_attr_block (w_inner, out w_voice, out w_voice_display, out w_style, out w_effect, out w_lang);
                     // w_voice/lang on word-level is ignored per spec (voice per line only), but parse and drop
                     pos = w_end + 1;
                     while (pos < rest.length && rest[pos].isspace ()) pos++;
@@ -405,9 +428,9 @@ namespace G4 {
             var timestamp = line.substring (1, close - 1);
             var rest = line.substring (close + 1).strip ();
 
-            string voice_role, style, effect, lang;
+            string voice_role, voice_display, style, effect, lang;
             string text_part;
-            parse_lrc_plus_header_attrs (rest, out voice_role, out style, out effect, out lang, out text_part);
+            parse_lrc_plus_header_attrs (rest, out voice_role, out voice_display, out style, out effect, out lang, out text_part);
 
             var ms = parse_timestamp (timestamp);
             if (ms < 0) continue;
@@ -445,6 +468,7 @@ namespace G4 {
             // Strict isolation: no {…} without timing line
             if (!has_timing) {
                 voice_role = "";
+                voice_display = "";
                 style = "";
                 effect = "";
                 lang = "";
@@ -453,10 +477,46 @@ namespace G4 {
                 // plain LRC readers would have seen attrs as text, so lint should warn producer.
             }
 
-            LyricLine l = { ms, decoded_rest, words, voice_role, style, effect, lang };
+            LyricLine l = { ms, decoded_rest, words, voice_role, voice_display, style, effect, lang };
             result += l;
         }
-        return result;
+        return deduplicate_lines (result);
+    }
+
+    private LyricLine[] deduplicate_lines (LyricLine[] input) {
+        if (input.length <= 1) return input;
+        LyricLine[] out = {};
+        out += input[0];
+        for (var i = 1; i < input.length; i++) {
+            var prev = out[out.length - 1];
+            var cur = input[i];
+            bool same_time = (prev.time_ms == cur.time_ms) || (prev.time_ms >= 0 && cur.time_ms >= 0 && (prev.time_ms - cur.time_ms).abs () < 350);
+            bool same_voice = prev.voice_role == cur.voice_role;
+            bool same_text = prev.text.strip () == cur.text.strip ();
+            bool words_similar = false;
+            if (prev.words.length == cur.words.length && prev.words.length > 0) {
+                bool all_words_match = true;
+                for (var w = 0; w < prev.words.length; w++) {
+                    if (prev.words[w].text.strip () != cur.words[w].text.strip ()) { all_words_match = false; break; }
+                    if ((prev.words[w].start_sec - cur.words[w].start_sec).abs () > 0.15 ||
+                        (prev.words[w].end_sec - cur.words[w].end_sec).abs () > 0.15) { all_words_match = false; break; }
+                }
+                words_similar = all_words_match;
+            } else if (prev.words.length == 0 && cur.words.length == 0) {
+                words_similar = true;
+            }
+            // Same timestamp + same voice + same text (+ similar words) => buggy upstream duplicate -> drop cur
+            if (same_time && same_voice && same_text && (words_similar || (prev.words.length > 0 && cur.words.length > 0))) {
+                continue;
+            }
+            // Also catch exact duplicate regardless of small timing slop when text/voice identical and no voice tag (default v1)
+            if (same_time && same_voice && same_text && same_voice && prev.voice_role == "" && cur.voice_role == "") {
+                // already handled above, but keep stricter: if time identical and text identical, dedup
+                continue;
+            }
+            out += cur;
+        }
+        return out;
     }
 
     public LyricLine[] parse_extended_lrc (string lrc) {
@@ -537,10 +597,10 @@ namespace G4 {
             if (words.length > 0)
                 words[words.length - 1].end_sec = line_end_sec;
 
-            LyricLine l = { line_ms, text_sb.str.strip (), words, voice_role, "", "", "" };
+            LyricLine l = { line_ms, text_sb.str.strip (), words, voice_role, "", "", "", "" };
             result += l;
         }
-        return result;
+        return deduplicate_lines (result);
     }
 
     public LyricLine[] parse_lrc (string lrc) {
@@ -584,10 +644,10 @@ namespace G4 {
             }
 
             var decoded_rest = decode_html_entities (rest);
-            LyricLine l = { ms, decoded_rest, words, voice_role, "", "", "" };
+            LyricLine l = { ms, decoded_rest, words, voice_role, "", "", "", "" };
             result += l;
         }
-        return result;
+        return deduplicate_lines (result);
     }
 
     public LyricLine[] parse_plain (string text) {
@@ -599,7 +659,7 @@ namespace G4 {
                         ? trimmed.index_of_char (']') - 1 : 0)) >= 0)
                 continue;
             LyricWord[] empty_words = {};
-            LyricLine l = { -1, trimmed, empty_words, "", "", "", "" };
+            LyricLine l = { -1, trimmed, empty_words, "", "", "", "", "" };
             result += l;
         }
         var start = 0;
@@ -607,6 +667,72 @@ namespace G4 {
         while (start <= end && result[start].text.length == 0) start++;
         while (end >= start && result[end].text.length == 0) end--;
         return result[start:end + 1];
+    }
+
+    // ── TTML agent pretty-name extraction ───────────────────────────────
+    private HashTable<string,string> extract_ttml_agents (Xml.Node* root) {
+        var agents = new HashTable<string,string> (str_hash, str_equal);
+        // find head
+        unowned Xml.Node* head = null;
+        for (var c = root->children; c != null; c = c->next) {
+            if (c->name == "head" || c->name.has_suffix ("head")) { head = c; break; }
+        }
+        if (head == null) return agents;
+        // walk recursively to find <agent> or <ttm:agent>
+        GLib.Queue<unowned Xml.Node*> q = new GLib.Queue<unowned Xml.Node*> ();
+        q.push_head (head);
+        while (!q.is_empty ()) {
+            unowned Xml.Node* cur = q.pop_head ();
+            for (var n = cur->children; n != null; n = n->next) {
+                if (n->type != Xml.ElementType.ELEMENT_NODE) continue;
+                var nname = n->name;
+                if (nname == "agent" || nname.has_suffix (":agent")) {
+                    // xml:id may be "id" or "xml:id"
+                    string? id = n->get_prop ("xml:id");
+                    if (id == null) id = n->get_prop ("id");
+                    if (id != null && ((!)id).length > 0) {
+                        string display = "";
+                        // look for child <name> or <ttm:name> or attribute displayName/name
+                        string? aname = n->get_prop ("displayName");
+                        if (aname == null) aname = n->get_prop ("name");
+                        if (aname != null && ((!)aname).strip ().length > 0) display = ((!)aname).strip ();
+                        // search child nodes for <name> or ttm:name
+                        for (var ch = n->children; ch != null; ch = ch->next) {
+                            if (ch->type != Xml.ElementType.ELEMENT_NODE) continue;
+                            var chname = ch->name;
+                            if (chname == "name" || chname.has_suffix (":name")) {
+                                var txt = ch->get_content ();
+                                if (txt.strip ().length > 0) { display = txt.strip (); break; }
+                            }
+                            // also check nested metadata
+                            for (var gch = ch->children; gch != null; gch = gch->next) {
+                                if (gch->type != Xml.ElementType.ELEMENT_NODE) continue;
+                                var gname = gch->name;
+                                if (gname == "name" || gname.has_suffix (":name")) {
+                                    var gtxt = gch->get_content ();
+                                    if (gtxt.strip ().length > 0) { display = gtxt.strip (); break; }
+                                }
+                            }
+                            if (display.length > 0) break;
+                        }
+                        if (display.length > 0) agents.set ((!)id, display);
+                    }
+                }
+                q.push_tail (n);
+            }
+        }
+        return agents;
+    }
+
+    private string agent_display_for (HashTable<string,string> agents, string voice_role) {
+        if (voice_role.length == 0) return "";
+        if (voice_role == "bg") return "";
+        string? v = agents.lookup (voice_role);
+        if (v != null) return (!)v;
+        // also try lower case?
+        v = agents.lookup (voice_role.down ());
+        if (v != null) return (!)v;
+        return "";
     }
 
     // ── TTML parsers ──────────────────────────────────────────────────
@@ -647,11 +773,12 @@ namespace G4 {
             }
         }
 
+        var agents = extract_ttml_agents (root);
         LyricLine[] ttml_result;
         if (has_word_timing) {
-            ttml_result = parse_ttml_word_synced (body);
+            ttml_result = parse_ttml_word_synced (body, agents);
         } else if (has_line_timing) {
-            ttml_result = parse_ttml_line_synced (body);
+            ttml_result = parse_ttml_line_synced (body, agents);
         } else {
             ttml_result = parse_ttml_unsynced (body);
         }
@@ -677,7 +804,7 @@ namespace G4 {
         return result;
     }
 
-    private LyricLine[] parse_ttml_line_synced (Xml.Node* body) {
+    private LyricLine[] parse_ttml_line_synced (Xml.Node* body, HashTable<string,string>? agents = null) {
         LyricLine[] result = {};
         for (var div = body->children; div != null; div = div->next) {
             if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
@@ -694,6 +821,13 @@ namespace G4 {
                 string voice_role = "";
                 if (p_agent != null && (!)p_agent != "v1")
                     voice_role = (!)p_agent;
+                string voice_display = "";
+                if (agents != null) {
+                    // try raw agent id first (preserves v1 pretty name), fallback to role
+                    string raw = p_agent ?? "";
+                    voice_display = agent_display_for ((!)agents, raw);
+                    if (voice_display.length == 0) voice_display = agent_display_for ((!)agents, voice_role);
+                }
 
                 var p_content = p->get_content ();
 
@@ -749,7 +883,7 @@ namespace G4 {
                 var line_text = line_text_sb.str.strip ();
                 if (line_text.length == 0) continue;
 
-                LyricLine main_line = { ms, line_text, main_words, voice_role, "", "", "" };
+                LyricLine main_line = { ms, line_text, main_words, voice_role, voice_display, "", "", "" };
                 result += main_line;
 
                 if (bg_words.length > 0) {
@@ -758,7 +892,7 @@ namespace G4 {
                         bg_text_sb.append (bw.text);
                         bg_text_sb.append_c (' ');
                     }
-                    LyricLine bg_line = { ms, bg_text_sb.str.strip (), bg_words, "bg", "", "", "" };
+                    LyricLine bg_line = { ms, bg_text_sb.str.strip (), bg_words, "bg", "", "", "", "" };
                     result += bg_line;
                 }
             }
@@ -766,7 +900,7 @@ namespace G4 {
         return result;
     }
 
-    private LyricLine[] parse_ttml_word_synced (Xml.Node* body) {
+    private LyricLine[] parse_ttml_word_synced (Xml.Node* body, HashTable<string,string>? agents = null) {
         LyricLine[] result = {};
         for (var div = body->children; div != null; div = div->next) {
             if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
@@ -783,6 +917,11 @@ namespace G4 {
                 string voice_role = "";
                 if (p_agent != null && (!)p_agent != "v1")
                     voice_role = (!)p_agent;
+                // keep raw agent for display lookup (preserves v1 pretty name)
+                string raw_agent = p_agent ?? "";
+                string last_agent = raw_agent;
+                // voice_display will be resolved after span loop (span agent may override)
+                string voice_display = "";
 
                 LyricWord[] main_words = {};
                 LyricWord[] bg_words = {};
@@ -796,8 +935,13 @@ namespace G4 {
                     var role = span->get_prop ("role");
                     bool is_bg = (role != null && (!)role == "x-bg");
                     var span_agent = span->get_prop ("agent");
-                    if (!is_bg && span_agent != null && (!)span_agent != "v1")
+                    if (!is_bg && span_agent != null && (!)span_agent != "v1") {
                         voice_role = (!)span_agent;
+                        last_agent = (!)span_agent;
+                    } else if (!is_bg && span_agent != null) {
+                        // v1 case: voice_role stays "" but keep last_agent for display
+                        last_agent = (!)span_agent;
+                    }
 
                     if (is_bg) {
                         for (var ws = span->children; ws != null; ws = ws->next) {
@@ -829,13 +973,19 @@ namespace G4 {
                     }
                 }
 
+                // resolve display name after final voice_role (p_agent + span_agent)
+                if (agents != null) {
+                    voice_display = agent_display_for ((!)agents, voice_role);
+                    if (voice_display.length == 0 && last_agent.length > 0)
+                        voice_display = agent_display_for ((!)agents, last_agent);
+                }
                 if (main_words.length > 0 || main_text_sb.str.strip ().length > 0) {
-                    LyricLine l = { line_ms, main_text_sb.str.strip (), main_words, voice_role, "", "", "" };
+                    LyricLine l = { line_ms, main_text_sb.str.strip (), main_words, voice_role, voice_display, "", "", "" };
                     result += l;
                 }
 
                 if (bg_words.length > 0) {
-                    LyricLine bg_line = { line_ms, bg_text_sb.str.strip (), bg_words, "bg", "", "", "" };
+                    LyricLine bg_line = { line_ms, bg_text_sb.str.strip (), bg_words, "bg", "", "", "", "" };
                     result += bg_line;
                 }
             }
@@ -928,6 +1078,20 @@ namespace G4 {
         var parts = new StringBuilder ();
         if (l.voice_role.length > 0) {
             parts.append ("voice:%s".printf (l.voice_role));
+        }
+        if (l.voice_display.length > 0) {
+            if (parts.len > 0) parts.append_c ('|');
+            // escape quotes if display contains '"' or '|' or '}'
+            var disp = l.voice_display;
+            // if display contains '|' '}' ',' or space, quote it
+            bool needs_quotes = disp.contains ("|") || disp.contains ("}") || disp.contains (",") || disp.contains ("\"") || disp.contains (" ");
+            if (needs_quotes) {
+                // escape internal quotes
+                disp = disp.replace ("\"", "&quot;");
+                parts.append ("display:\"%s\"".printf (disp));
+            } else {
+                parts.append ("display:%s".printf (disp));
+            }
         }
         if (l.style.length > 0) {
             if (parts.len > 0) parts.append_c ('|');

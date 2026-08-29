@@ -60,12 +60,15 @@ Canonical keys (lowercase):
 | Key | Value examples | Semantics | Degradation |
 |---|---|---|---|
 | `voice` | `v1`, `v2`, `bg`, `lead` | Singer/part. `bg` renders smaller per `src/lyrics/lyrics-sheet.vala:565`. | Unknown voice → treat as `v1`/default |
+| `display` | `Glinda`, `"Elphaba"` (also `name`, `label` aliases; comma shorthand `voice:v2,"Glinda"`) | Pretty display name for `voice` id. TTML `ttm:agent` `ttm:name` maps here. | Unknown → ignored, badge falls back to `voice` id |
 | `style` | `bold`, `italic`, `underline`, `strike` (comma-list) | Inline style advisory. Example: `style:bold,underline`. | Unknown token → ignore token |
 | `effect` | `shake`, `wobble`, `glow` | Animation; purely advisory. | Unknown → no effect |
 | `color` | `#RRGGBB`, `red` | Text color. | Unknown → ignore |
 | `lang` | `en`, `ja`, `romanized` | Language/track tag. | Ignore if not handling i18n |
 
 All other keys are extension — must be skipped. This satisfies "skip ANYTHING they don't understand and still work as plain LRC".
+
+**Voice pretty-name:** `voice` is the stable id (`v2`, `v1000`, `bg`) used for deduplication/duet grouping and color hashing. `display` (aliases `name`, `label`) is the human label (`Elphaba`, `Glinda`). Serialized as `{voice:v2|display:Glinda}` or shorthand `{voice:v2,"Glinda"}` (comma + optional quotes). Parser accepts both (`src/lyrics/parser.vala:215`): `voice:v2,Glinda` or `voice:v2,"Glinda"` or `display:Glinda`. TTML importer extracts `head/metadata/ttm:agent` `xml:id` → `voice` and child `ttm:name` → `display`. Badge renders `display` when present, falling back to `voice` id.
 
 ---
 

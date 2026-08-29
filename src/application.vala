@@ -55,6 +55,14 @@ namespace RepeatMode {
             _current_list.model = _music_queue;
             _current_list.items_changed.connect (on_music_list_changed);
             _music_queue.items_changed.connect (on_music_library_changed);
+            // Robust queue persistence: debounce save on any queue change (drag reorder, remove, etc)
+            _music_queue.items_changed.connect ((pos, removed, added) => {
+                if ((removed != 0 || added != 0) && !_loading) {
+                    // Mark modified and schedule debounced save (also handles direct ListStore ops)
+                    _list_modified = true;
+                    schedule_queue_save ();
+                }
+            });
             _loader.loading_changed.connect ((loading) => _loading = loading);
             _loader.music_found.connect (on_music_found);
             _loader.music_lost.connect (on_music_lost);
@@ -180,6 +188,10 @@ namespace RepeatMode {
         public override void shutdown () {
             _actions = null;
             _loader.save_tag_cache ();
+            // Ensure queue is saved even if debounced save hasn't fired yet
+            if (_queue_save_timeout != 0 || _list_modified) {
+                save_queue_sync ();
+            }
             delete_cover_tmp_file_async.begin ((obj, res) => delete_cover_tmp_file_async.end (res));
 
             if (_mpris_id != 0) {
@@ -275,12 +287,53 @@ namespace RepeatMode {
             }
         }
 
+        private uint _queue_save_timeout = 0;
+
+        private void schedule_queue_save () {
+            if (_queue_save_timeout != 0) {
+                Source.remove (_queue_save_timeout);
+                _queue_save_timeout = 0;
+            }
+            // Debounce 400ms to avoid excessive writes during drag reorder
+            _queue_save_timeout = Timeout.add (400, () => {
+                _queue_save_timeout = 0;
+                save_queue_sync ();
+                return false;
+            });
+        }
+
+        public bool save_queue_sync () {
+            var n = _music_queue.get_n_items ();
+            var uris = new GenericArray<string> (n);
+            for (var i = 0; i < n; i++) {
+                var music = (Music) _music_queue.get_item (i);
+                uris.add (music.uri);
+            }
+            var file = get_playing_list_file ();
+            try {
+                var parent = file.get_parent ();
+                if (parent != null) {
+                    var p = (!)parent;
+                    if (!p.query_exists ())
+                        p.make_directory_with_parents ();
+                }
+            } catch (Error e) {}
+            var ok = save_playlist_file (file, uris, null, false);
+            if (ok) _list_modified = false;
+            if (_queue_save_timeout != 0) {
+                Source.remove (_queue_save_timeout);
+                _queue_save_timeout = 0;
+            }
+            return ok;
+        }
+
         public bool list_modified {
             get {
                 return _list_modified;
             }
             set {
                 _list_modified = value;
+                if (value) schedule_queue_save ();
             }
         }
 
@@ -416,9 +469,16 @@ namespace RepeatMode {
         }
 
         public int insert_after_current (Playlist playlist) {
-            uint position = _current_index;
+            uint position = 0;
             if (_current_music != null && _music_queue.find ((!)_current_music, out position)) {
                 position++;
+            } else if (_current_index >= 0 && _current_index < (int) _music_queue.get_n_items ()) {
+                // Fallback: use filtered index if current not in queue (e.g., after filter/sort change)
+                position = (uint) (_current_index + 1);
+                position = uint.min (position, _music_queue.get_n_items ());
+            } else {
+                // No current track or not found: append at end (Play at Next -> queue end)
+                position = _music_queue.get_n_items ();
             }
             var changed = merge_items_to_store (_music_queue, playlist.items, ref position);
             list_modified |= changed;
@@ -438,6 +498,41 @@ namespace RepeatMode {
                 update_current_item ();
             }
             return changed;
+        }
+
+        public bool remove_from_queue (Playlist playlist) {
+            var removed = remove_items_from_store (_music_queue, playlist.items);
+            if (removed > 0) {
+                list_modified = true;
+                update_current_item ();
+                return true;
+            }
+            return false;
+        }
+
+        public void clear_queue () {
+            var n = _music_queue.get_n_items ();
+            if (n > 0) {
+                _music_queue.remove_all ();
+                _queue_original_order.remove_range (0, _queue_original_order.length);
+                list_modified = true;
+                update_current_item ();
+            }
+        }
+
+        public bool move_in_queue (uint from, uint to) {
+            var n = _music_queue.get_n_items ();
+            if (from >= n || to > n || from == to) return false;
+            if (from == to || (from + 1 == to)) return false;
+            var obj = _music_queue.get_item (from);
+            if (obj == null) return false;
+            _music_queue.remove (from);
+            // Adjust target after removal
+            if (to > from) to--;
+            _music_queue.insert (to, (Object) obj);
+            list_modified = true;
+            update_current_item ();
+            return true;
         }
 
         public async void load_music_folder_async () {
@@ -540,6 +635,14 @@ public void restore_queue_order () {
                 uris.add (music.uri);
             }
             var file = get_playing_list_file ();
+            try {
+                var parent = file.get_parent ();
+                if (parent != null) {
+                    var p = (!)parent;
+                    if (!p.query_exists ())
+                        p.make_directory_with_parents ();
+                }
+            } catch (Error e) {}
             var ret = yield run_async<bool> (() => save_playlist_file (file, uris, null, false), false, true);
             if (ret)
                 _list_modified = false;
@@ -856,11 +959,17 @@ private void on_player_end () {
             try {
                 var old_settings = new GLib.Settings ("com.github.lalaggi.semitone");
                 var new_settings = new GLib.Settings ("xyz.lalaggi.semitone");
+                var schema = new_settings.settings_schema;
                 foreach (var key in old_settings.list_keys ()) {
                     try {
+                        if (!schema.has_key (key)) continue; // key removed in new schema
                         var old_val = old_settings.get_value (key);
                         var new_val = new_settings.get_value (key);
-                        if (!old_val.equal (new_val)) {
+                        var def_val = new_settings.get_default_value (key);
+                        // Only migrate if new is still at default and old differs from new.
+                        // This makes migration one-way and idempotent: user changes to new
+                        // are never clobbered on subsequent startups.
+                        if (def_val != null && new_val.equal ((!)def_val) && !old_val.equal (new_val)) {
                             new_settings.set_value (key, old_val);
                         }
                     } catch (Error e) { warning ("GSettings migrate key %s failed: %s", key, e.message); }

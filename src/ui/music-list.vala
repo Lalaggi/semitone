@@ -84,12 +84,17 @@ namespace G4 {
         public Music? current_node {
             set {
                 var cur = get_binding_widget (_current_node);
-                if (cur != null)
+                if (cur != null) {
                     ((!)cur).playing.visible = false;
+                    ((!)cur).remove_css_class ("queue-playing");
+                }
                 _current_node = value;
                 var widget = get_binding_widget (value);
-                if (widget != null)
+                if (widget != null) {
                     ((!)widget).playing.visible = true;
+                    if (_data_store == _app.music_queue)
+                        ((!)widget).add_css_class ("queue-playing");
+                }
             }
         }
 
@@ -103,16 +108,52 @@ namespace G4 {
             }
         }
 
+        private double _animated_drop_index = -1;
+        private Adw.TimedAnimation? _drop_anim = null;
+
         public int dropping_item {
             get {
                 return _dropping_item;
             }
             set {
                 if (_dropping_item != value) {
+                    int old = _dropping_item;
                     _dropping_item = value;
-                    queue_draw ();
+                    if (value == -1) {
+                        _drop_anim?.pause ();
+                        _drop_anim = null;
+                        _animated_drop_index = -1;
+                        queue_draw ();
+                    } else if (old == -1) {
+                        _animated_drop_index = value;
+                        queue_draw ();
+                    } else {
+                        double start = _animated_drop_index >= 0 ? _animated_drop_index : (double) old;
+                        var target = new Adw.CallbackAnimationTarget ((v) => {
+                            _animated_drop_index = v;
+                            queue_draw ();
+                        });
+                        _drop_anim?.pause ();
+                        var anim = new Adw.TimedAnimation (this, start, (double) value, 180, target);
+                        anim.easing = Adw.Easing.EASE_OUT_CUBIC;
+                        _drop_anim = anim;
+                        anim.play ();
+                    }
                 }
             }
+        }
+
+        public uint max_columns {
+            get { return _grid_view.max_columns; }
+            set {
+                _grid_view.max_columns = value;
+                _grid_view.min_columns = value == 1 ? 1 : 1;
+                queue_draw ();
+            }
+        }
+
+        public void set_propagate_natural_height (bool v) {
+            _scroll_view.propagate_natural_height = v;
         }
 
         public Gtk.FilterListModel filter_model {
@@ -151,6 +192,11 @@ namespace G4 {
 
         protected bool _has_add_to_queque = true;
         protected bool _prompt_to_save = true;
+
+        public bool has_add_to_queue {
+            get { return _has_add_to_queque; }
+            set { _has_add_to_queque = value; }
+        }
         private GenericArray<Gtk.Button> _action_buttons = new GenericArray<Gtk.Button> (4);
         private Gtk.Widget? _header_bar_hided = null;
         private Gtk.Revealer? _header_revealer = null;
@@ -325,22 +371,53 @@ namespace G4 {
             }
 
             var rc_grid = Graphene.Rect ();
-            if (_editable && _columns > 0 && _dropping_item >= 0 && _grid_view.compute_bounds (this, out rc_grid)) {
-                var row = _dropping_item / _columns;
-                var col = _dropping_item - _columns * row;
-                var rc_cell = Graphene.Rect ();
-                rc_cell.init (_cell_size.width * col, _cell_size.height * row, _cell_size.width, _cell_size.height);
-                rc_cell.offset (rc_grid.origin.x, rc_grid.origin.y);
-                rc_cell.origin.y -= (float) (_scroll_view.vadjustment.value) - (_cell_size.height - _item_size.height);
-                rc_cell.size.height = 1;
+            bool has_drop = false;
+            double anim_idx = _animated_drop_index;
+            int eff_drop = _dropping_item;
+            if (_editable && _columns > 0 && _grid_view.compute_bounds (this, out rc_grid)) {
+                double idx = -1;
+                if (anim_idx >= 0)
+                    idx = anim_idx;
+                else if (eff_drop >= 0)
+                    idx = eff_drop;
+                if (idx >= -0.5) {
+                    has_drop = true;
+                    // Clamp idx to visible range
+                    double max_idx = (double) visible_count;
+                    if (idx > max_idx) idx = max_idx;
+                    if (idx < 0) idx = 0;
+                    int row = (int) (idx / (double) _columns);
+                    double col_f = idx - (double) row * (double) _columns;
+                    int col = (int) col_f;
+                    double frac = col_f - (double) col;
+                    var rc_cell = Graphene.Rect ();
+                    // Interpolate x for smooth horizontal slide in grid mode
+                    double base_x = (double) _cell_size.width * (double) col + frac * (double) _cell_size.width;
+                    double base_y = (double) _cell_size.height * (double) row;
+                    // Responsive line: thicker, inset, rounded
+                    double inset = 12;
+                    double line_h = 3;
+                    rc_cell.init ((float) (base_x + inset), (float) base_y, (float) (_cell_size.width - inset * 2), (float) _cell_size.height);
+                    rc_cell.offset (rc_grid.origin.x, rc_grid.origin.y);
+                    rc_cell.origin.y -= (float) (_scroll_view.vadjustment.value) - (_cell_size.height - _item_size.height);
+                    // Place line at top of cell (between items)
+                    rc_cell.origin.y += (float) (_cell_size.height - _item_size.height) * 0.5f;
+                    rc_cell.size.height = (float) line_h;
+                    // Add subtle glow/shadow behind
 #if ADW_1_6
-                var color = Adw.StyleManager.get_default ().accent_color.to_rgba ();
-#elif GTK_4_10
-                var color = get_color ();
+                    var color = Adw.StyleManager.get_default ().accent_color.to_rgba ();
 #else
-                var color = get_style_context ().get_color ();
+                    var color = get_color ();
 #endif
-                snapshot.append_color (color, rc_cell);
+                    // Outer glow (lower opacity)
+                    var glow = rc_cell;
+                    glow.init (rc_cell.origin.x - 2, rc_cell.origin.y - 1, rc_cell.size.width + 4, rc_cell.size.height + 2);
+                    var glow_color = color;
+                    glow_color.alpha *= 0.25f;
+                    snapshot.append_color (glow_color, glow);
+                    // Main line
+                    snapshot.append_color (color, rc_cell);
+                }
             }
             base.snapshot (snapshot);
         }
@@ -417,8 +494,11 @@ namespace G4 {
                 }
                 if (_editable) {
                     var section = new Menu ();
-                    section.append_item (create_menu_item_for_uri (uri, _("_Remove"), ACTION_WIN + ACTION_REMOVE));
-                    section.append_item (create_menu_item_for_uri (uri, _("_Move to Trash"), ACTION_APP + ACTION_TRASH_FILE));
+                    // For queue, only "Remove from Queue", no Trash
+                    bool is_queue = _data_store == _app.music_queue;
+                    section.append_item (create_menu_item_for_uri (uri, is_queue ? _("Remove from _Queue") : _("_Remove"), ACTION_WIN + ACTION_REMOVE));
+                    if (!is_queue)
+                        section.append_item (create_menu_item_for_uri (uri, _("_Move to Trash"), ACTION_APP + ACTION_TRASH_FILE));
                     menu.append_section (null, section);
                 }
                 return menu;
@@ -434,7 +514,56 @@ namespace G4 {
             item_created (item);
 
             if (_selectable) {
-                create_drag_source (child.image, item);
+                // For queue, use handle-only drag (Metrolist-like draggableHandle), for others whole row
+                if (_data_store == _app.music_queue) {
+                    var handle = new Gtk.Image.from_icon_name ("open-menu-symbolic");
+                    handle.pixel_size = 16;
+                    handle.add_css_class ("dim-label");
+                    handle.add_css_class ("drag-handle");
+                    handle.margin_start = 4;
+                    handle.margin_end = 4;
+                    handle.halign = Gtk.Align.CENTER;
+                    handle.valign = Gtk.Align.CENTER;
+                    handle.tooltip_text = _("Drag to reorder");
+                    ((Gtk.Box) child).append (handle);
+                    create_drag_source (handle, item);
+                    // Swipe to remove (Metrolist-like SwipeToDismiss)
+                    var swipe = new Gtk.GestureSwipe ();
+                    swipe.set_button (0);
+                    swipe.swipe.connect ((vx, vy) => {
+                        if (Math.fabs (vx) > Math.fabs (vy) && Math.fabs (vx) > 120 && !_multi_selection) {
+                            var music = item.item as Music;
+                            if (music != null) {
+                                var m = (!)music;
+                                uint pos = 0;
+                                if (_data_store.find ((Music) m, out pos)) {
+                                    int idx = (int) pos;
+                                    var removed = m;
+                                    _data_store.remove (pos);
+                                    modified = true;
+                                    _app.list_modified = true;
+                                    // Undo support via toast
+                                    var win = Window.get_default ();
+                                    if (win != null) {
+                                        var w = (!)win;
+                                        var toast = new Adw.Toast (_("Removed from queue"));
+                                        toast.button_label = _("Undo");
+                                        toast.timeout = 4;
+                                        toast.button_clicked.connect (() => {
+                                            uint ins = (uint) int.min (idx, (int) _data_store.get_n_items ());
+                                            _data_store.insert (ins, (Object) removed);
+                                            _app.list_modified = true;
+                                        });
+                                        w.add_toast (toast);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    child.add_controller (swipe);
+                } else {
+                    create_drag_source (child, item);
+                }
                 child.create_music_menu.connect (on_create_music_menu);
                 make_right_clickable (child, child.show_popover_menu);
                 make_long_pressable (child, (widget, x, y) => multi_selection = true);
@@ -503,7 +632,17 @@ namespace G4 {
                     if (dst_obj == null || !_data_store.find ((!)dst_obj, out position))
                         position = _data_store.get_n_items ();
                     var playlist = (Playlist) value.get_object ();
-                    modified |= merge_items_to_store (_data_store, playlist.items, ref position);
+                    bool was = merge_items_to_store (_data_store, playlist.items, ref position);
+                    modified |= was;
+                    // For queue, ensure file is saved immediately (not just debounced) to avoid loss
+                    if (was && _data_store == _app.music_queue) {
+                        _app.list_modified = true;
+                        // Immediate sync save for queue to guarantee persistence
+                        Idle.add (() => {
+                            _app.save_queue_sync ();
+                            return false;
+                        });
+                    }
                 } else {
                     var files = get_dropped_files (value);
                     _app.open_files_async.begin (files, position, false,
@@ -520,9 +659,24 @@ namespace G4 {
             _columns = get_grid_view_item_size (_grid_view, ref _item_size, ref _cell_size);
             if (_cell_size.width <= 0 || _cell_size.height <= 0)
                 return Gdk.DragAction.COPY;
+
+            // Autoscroll when dragging near edges (like Metrolist scrollThresholdPadding)
+            const double EDGE = 64;
+            double view_h = _scroll_view.get_height ();
+            var adj = _scroll_view.vadjustment;
+            if (y < EDGE && adj.value > adj.lower) {
+                double delta = (EDGE - y) / EDGE * 10;
+                adj.value = double.max (adj.lower, adj.value - delta);
+            } else if (y > view_h - EDGE && adj.value < adj.upper - adj.page_size) {
+                double delta = (y - (view_h - EDGE)) / EDGE * 10;
+                adj.value = double.min (adj.upper - adj.page_size, adj.value + delta);
+            }
+
             var col = (int) (x / _cell_size.width);
-            var row = (int) ((y + _scroll_view.vadjustment.value) / _cell_size.height);
+            var row = (int) ((y + adj.value) / _cell_size.height);
             var index = (int) _columns * row + col;
+            int drop_pos = int.min (index, (int) visible_count);
+
             if (_dropping_item != index && _filter_model.get_item (index) is Playlist) {
                 if (_activate_handle != 0)
                     Source.remove (_activate_handle);
@@ -532,7 +686,7 @@ namespace G4 {
                         _grid_view.activate (index);
                 });
             }
-            dropping_item = int.min (index, (int) visible_count);
+            dropping_item = drop_pos;
             return Gdk.DragAction.LINK;
         }
 
@@ -545,10 +699,33 @@ namespace G4 {
             //  Hack: don't use `this` directly, because it will not be destroyed when detach???
             var point = Graphene.Point ();
             var source = new Gtk.DragSource ();
-            source.actions = Gdk.DragAction.LINK;
+            source.actions = Gdk.DragAction.MOVE | Gdk.DragAction.LINK;
             source.drag_begin.connect ((drag) => {
+                // For queue handle drag, widget is handle; find row for visual
+                var row = find_ancestry_with_type (widget, typeof (MusicWidget)) as Gtk.Widget;
+                var target = row ?? widget;
+                // Center hotspot on row for handle drag
+                if (widget != target) {
+                    point.init ((float) target.get_width () / 2.0f, (float) target.get_height () / 2.0f);
+                }
                 var list = find_ancestry_with_type (widget, typeof (MusicList));
-                (list as MusicList)?.on_drag_begin (source, drag, widget, point);
+                (list as MusicList)?.on_drag_begin (source, drag, target, point);
+                target.add_css_class ("dragging");
+                target.add_css_class ("queue-dragging");
+                // Make it pop out: scale + shadow via CSS, keep original semi-transparent
+                target.opacity = 0.92;
+            });
+            source.drag_end.connect ((drag, delete_data) => {
+                var row = find_ancestry_with_type (widget, typeof (MusicWidget)) as Gtk.Widget;
+                var target = row ?? widget;
+                target.remove_css_class ("dragging");
+                target.remove_css_class ("queue-dragging");
+                target.opacity = 1.0;
+                // Clear any lingering drop indicator
+                var list = find_ancestry_with_type (widget, typeof (MusicList)) as MusicList;
+                if (list != null) {
+                    ((!)list).dropping_item = -1;
+                }
             });
             source.prepare.connect ((x, y) => {
                 point.init ((float) x, (float) y);
@@ -559,7 +736,7 @@ namespace G4 {
         }
 
         private void create_drop_target (Gtk.Widget widget) {
-            var target = new Gtk.DropTarget (Type.INVALID, Gdk.DragAction.COPY | Gdk.DragAction.LINK);
+            var target = new Gtk.DropTarget (Type.INVALID, Gdk.DragAction.COPY | Gdk.DragAction.LINK | Gdk.DragAction.MOVE);
             target.set_gtypes ({ typeof (Playlist), typeof (Gdk.FileList) });
             target.accept.connect ((drop) => drop.formats.contain_gtype (typeof (Playlist))
                                 || drop.formats.contain_gtype (typeof (Gdk.FileList)));
@@ -733,11 +910,10 @@ namespace G4 {
 
     public Gtk.Widget? find_ancestry_with_type (Gtk.Widget widget, Type type) {
         var parent = widget.get_parent ();
-        if (parent?.get_type ()?.is_a (type) ?? false)
-            return parent as MusicList;
-        else if (parent != null)
-            return find_ancestry_with_type ((!)parent, type);
-        return null;
+        if (parent == null) return null;
+        if (((!)parent).get_type ().is_a (type))
+            return parent;
+        return find_ancestry_with_type ((!)parent, type);
     }
 
     public struct CountedRect {

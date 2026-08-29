@@ -17,6 +17,13 @@
               </object>
             </child>
             <child>
+              <object class="AdwComboRow" id="sheet_position_row">
+                <property name="icon-name">view-dual-symbolic</property>
+                <property name="title" translatable="yes">Bottom sheets position</property>
+                <property name="subtitle" translatable="yes">When not in compact mode: cover both panes or just left/right</property>
+              </object>
+            </child>
+            <child>
               <object class="AdwActionRow">
                 <property name="icon-name">view-list-symbolic</property>
                 <property name="title" translatable="yes">List density</property>
@@ -73,7 +80,7 @@
             </child>
             <child>
               <object class="AdwActionRow">
-                <property name="icon-name">text-css-symbolic</property>
+                <property name="icon-name">document-edit-symbolic</property>
                 <property name="title" translatable="yes">Custom stylesheet</property>
                 <property name="subtitle" translatable="yes">Can break the app and is difficult to undo. Back up settings first.</property>
                 <child>
@@ -222,7 +229,7 @@
             </child>
             <child>
               <object class="AdwExpanderRow" id="eq_row">
-                <property name="icon-name">audio-equalizer-symbolic</property>
+                <property name="icon-name">audio-volume-high-symbolic</property>
                 <property name="title" translatable="yes">Graphic equalizer</property>
                 <property name="show-enable-switch">true</property>
                 <child>
@@ -252,7 +259,7 @@
     <child>
       <object class="AdwPreferencesPage">
         <property name="title" translatable="yes">Lyrics</property>
-        <property name="icon-name">text-x-generic-symbolic</property>
+        <property name="icon-name">media-view-subtitles-symbolic</property>
         <child>
           <object class="AdwPreferencesGroup">
             <property name="title" translatable="yes">Behaviour</property>
@@ -319,6 +326,26 @@
                 </child>
               </object>
             </child>
+            <child>
+              <object class="AdwComboRow" id="lyrics_voice_display_row">
+                <property name="icon-name">system-users-symbolic</property>
+                <property name="title" translatable="yes">Show voice roles</property>
+                <property name="subtitle" translatable="yes">How to display singer labels on multi-voice lyrics</property>
+              </object>
+            </child>
+            <child>
+              <object class="AdwActionRow">
+                <property name="icon-name">color-select-symbolic</property>
+                <property name="title" translatable="yes">Enable voice colors</property>
+                <property name="subtitle" translatable="yes">Colorize active words and badges by voice, independent of labels</property>
+                <property name="activatable_widget">lyrics_voice_colors_btn</property>
+                <child>
+                  <object class="GtkSwitch" id="lyrics_voice_colors_btn">
+                    <property name="valign">center</property>
+                  </object>
+                </child>
+              </object>
+            </child>
           </object>
         </child>
         <child>
@@ -338,6 +365,7 @@
             <property name="description" translatable="yes">Store as plain text in ~/.config/semitone/</property>
             <child>
               <object class="AdwActionRow">
+                <property name="icon-name">preferences-system-symbolic</property>
                 <property name="title">Musixmatch</property>
                 <property name="subtitle" translatable="yes">musixmatch-api-key</property>
               </object>

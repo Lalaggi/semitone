@@ -207,5 +207,21 @@
       <default>'betterlyrics,simpmusic,musicbrainz,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch'</default>
       <summary>Comma-separated provider priority order</summary>
     </key>
+    <key name="sheet-position" type="u">
+      <range min="0" max="2"/>
+      <default>0</default>
+      <summary>Sheet position: 0=both, 1=left, 2=right</summary>
+    </key>
+    <key name="lyrics-voice-display-mode" type="u">
+      <range min="0" max="2"/>
+      <default>2</default>
+      <summary>How to show voice roles in lyrics</summary>
+      <description>0=none, 1=coded name (V2/V1000), 2=pretty name (Glinda/Elphaba) with fallback to coded</description>
+    </key>
+    <key name="lyrics-voice-colors-enabled" type="b">
+      <default>true</default>
+      <summary>Enable per-voice colors in lyrics</summary>
+      <description>Colorizes active words and voice badges by voice role, independent of whether badges are shown</description>
+    </key>
   </schema>
 </schemalist>

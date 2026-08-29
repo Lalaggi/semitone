@@ -1,5 +1,11 @@
 namespace G4 {
 
+    namespace SheetPosition {
+        public const uint BOTH = 0;
+        public const uint LEFT = 1;
+        public const uint RIGHT = 2;
+    }
+
     public class Window : Adw.ApplicationWindow {
         private Adw.ToastOverlay _toast = new Adw.ToastOverlay ();
         private Leaflet _leaflet = new Leaflet ();
@@ -11,6 +17,7 @@ namespace G4 {
 
         private int _blur_size = 512;
         private uint _bkgnd_blur = BlurMode.ALWAYS;
+        private uint _sheet_position = SheetPosition.BOTH;
         private CrossFadePaintable _bkgnd_paintable = new CrossFadePaintable ();
         private Gdk.Paintable? _cover_paintable = null;
 
@@ -72,7 +79,21 @@ namespace G4 {
             settings.bind ("width", this, "default-width", SettingsBindFlags.DEFAULT);
             settings.bind ("height", this, "default-height", SettingsBindFlags.DEFAULT);
             settings.bind ("blur-mode", this, "blur-mode", SettingsBindFlags.DEFAULT);
+            settings.bind ("sheet-position", this, "sheet-position", SettingsBindFlags.DEFAULT);
             PreferencesWindow.apply_ui_scale (settings.get_double ("ui-scale"));
+
+            _leaflet.notify["folded"].connect (() => apply_sheet_position ());
+            this.notify["direction"].connect (() => apply_sheet_position ());
+            // apply initial
+            Idle.add (() => { apply_sheet_position (); return false; });
+        }
+
+        public uint sheet_position {
+            get { return _sheet_position; }
+            set {
+                _sheet_position = value;
+                apply_sheet_position ();
+            }
         }
 
         public uint blur_mode {
@@ -84,6 +105,11 @@ namespace G4 {
                 if (get_height () > 0)
                     update_background ();
             }
+        }
+
+        public override void size_allocate (int width, int height, int baseline) {
+            base.size_allocate (width, height, baseline);
+            apply_sheet_position ();
         }
 
         public bool focused_visible {
@@ -134,6 +160,10 @@ namespace G4 {
                 toast.action_target = new Variant.string ((!)uri);
                 toast.button_label = _("Show");
             }
+            _toast.add_toast (toast);
+        }
+
+        public void add_toast (Adw.Toast toast) {
             _toast.add_toast (toast);
         }
 
@@ -266,11 +296,25 @@ namespace G4 {
 
         private void setup_escape_key () {
             var controller = new Gtk.EventControllerKey ();
+            controller.propagation_phase = Gtk.PropagationPhase.CAPTURE;
             controller.key_pressed.connect ((keyval, keycode, state) => {
-                if (keyval == Gdk.Key.Escape && _leaflet.folded &&
-                    _leaflet.visible_mode == LeafletMode.CONTENT) {
-                    _leaflet.pop ();
-                    return true;
+                if (keyval == Gdk.Key.Escape) {
+                    if (_queue_sheet.bottom_sheet.open) {
+                        _queue_sheet.bottom_sheet.open = false;
+                        return true;
+                    }
+                    if (_lyrics_sheet.bottom_sheet.open) {
+                        _lyrics_sheet.bottom_sheet.open = false;
+                        return true;
+                    }
+                    if (_store_panel.handle_escape ()) {
+                        return true;
+                    }
+                    if (_leaflet.folded &&
+                        _leaflet.visible_mode == LeafletMode.CONTENT) {
+                        _leaflet.pop ();
+                        return true;
+                    }
                 }
                 return false;
             });
@@ -280,6 +324,15 @@ namespace G4 {
         private void button_command (SimpleAction action, Variant? parameter) {
             var name = parameter?.get_string ();
             if (name != null) {
+                // If queue sheet is open, route multi-selection actions to queue
+                if (_queue_sheet.bottom_sheet.open) {
+                    _queue_sheet.queue_list.button_command ((!)name);
+                    if (_queue_sheet.queue_list.modified) {
+                        ((Application) application).list_modified = true;
+                    }
+                    // Also try store panel if queue didn't handle? Keep queue priority
+                    return;
+                }
                 _store_panel.current_list.button_command ((!)name);
             }
         }
@@ -288,7 +341,34 @@ namespace G4 {
             var app = (Application) application;
             var uri = parameter?.get_string ();
             var music = uri != null ? app.loader.find_cache ((!)uri) : null;
+            if (music == null && uri != null) {
+                // Fallback scan queue for uri (cache miss)
+                var q = app.music_queue;
+                for (var i = 0; i < q.get_n_items (); i++) {
+                    var m = (Music) q.get_item (i);
+                    if (m.uri == uri) { music = m; break; }
+                }
+            }
             if (music != null) {
+                // If music is in queue, remove from queue directly
+                var q = app.music_queue;
+                uint pos;
+                if (q.find ((!)music, out pos)) {
+                    // Check if store_panel also contains it – prefer queue when sheet open
+                    if (_queue_sheet.bottom_sheet.open) {
+                        var pl = to_playlist ({(!)music});
+                        if (app.remove_from_queue (pl))
+                            return;
+                    }
+                    // Try queue first even when not open for direct queue removal
+                    var pl2 = to_playlist ({(!)music});
+                    // If queue removal succeeded, done
+                    uint qpos;
+                    if (q.find ((!)music, out qpos)) {
+                        if (app.remove_from_queue (pl2))
+                            return;
+                    }
+                }
                 _store_panel.remove_from_list ((!)music);
             }
         }
@@ -328,6 +408,48 @@ namespace G4 {
             } else {
                 _bkgnd_paintable.paintable = null;
             }
+        }
+
+        private void apply_sheet_position () {
+            // When folded (compact), sheet should cover whole width regardless of setting
+            bool is_single_pane = _sheet_position != SheetPosition.BOTH && !_leaflet.folded;
+            // Make other pane interactive when sheet covers only one pane
+            _queue_sheet.bottom_sheet.modal = !is_single_pane;
+            _lyrics_sheet.bottom_sheet.modal = !is_single_pane;
+            if (_leaflet.folded || _sheet_position == SheetPosition.BOTH) {
+                _queue_sheet.bottom_sheet.full_width = true;
+                _lyrics_sheet.bottom_sheet.full_width = true;
+                _queue_sheet.set_sheet_width (-1);
+                _lyrics_sheet.set_sheet_width (-1);
+                return;
+            }
+            var win_width = get_width ();
+            if (win_width <= 0)
+                win_width = _leaflet.get_width ();
+            if (win_width <= 0)
+                return;
+            // Replicate Leaflet's pane calculation: content_fraction 3/8
+            var content_width = (int) (win_width * 0.375).clamp (ContentWidth.MIN, ContentWidth.MAX);
+            var side_width = win_width - content_width;
+            if (side_width < ContentWidth.MIN)
+                side_width = ContentWidth.MIN;
+            bool is_rtl = get_direction () == Gtk.TextDirection.RTL;
+            int target_width;
+            double align;
+            if (_sheet_position == SheetPosition.LEFT) {
+                // physical left pane
+                target_width = is_rtl ? content_width : side_width;
+                align = 0.0;
+            } else { // RIGHT
+                target_width = is_rtl ? side_width : content_width;
+                align = 1.0;
+            }
+            _queue_sheet.bottom_sheet.full_width = false;
+            _lyrics_sheet.bottom_sheet.full_width = false;
+            _queue_sheet.bottom_sheet.align = (float) align;
+            _lyrics_sheet.bottom_sheet.align = (float) align;
+            _queue_sheet.set_sheet_width (target_width);
+            _lyrics_sheet.set_sheet_width (target_width);
         }
 
         public static Window? get_default () {

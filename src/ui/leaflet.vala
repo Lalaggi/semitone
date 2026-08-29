@@ -1,7 +1,7 @@
 namespace G4 {
 
     namespace ContentWidth {
-        public const int MIN = 340;
+        public const int MIN = 350;
         public const int MAX = 480;
     }
 

@@ -157,6 +157,26 @@ namespace G4 {
                     node = library.get_playlist ((!)pl);
                 } else {
                     node = loader.find_cache ((!)uri);
+                    if (node == null) {
+                        // Fallback: scan current queue for uri (handles cache-miss while queue already holds it)
+                        var q = _app.music_queue;
+                        for (var i = 0; i < q.get_n_items (); i++) {
+                            var m = (Music) q.get_item (i);
+                            if (m.uri == uri) {
+                                node = m;
+                                break;
+                            }
+                        }
+                    }
+                    // Last resort: create transient Music from uri so Play at Next still works
+                    if (node == null && ((!)uri).has_prefix ("file://")) {
+                        var file = File.new_for_uri ((!)uri);
+                        var name = file.get_basename () ?? "";
+                        node = new Music ((!)uri, name, 0);
+                        // Try to enrich from cache if later available
+                        var cached = loader.find_cache ((!)uri);
+                        if (cached != null) node = cached;
+                    }
                 }
             }
             return node != null ? to_playlist ({(!)node}) : (Playlist?) null;

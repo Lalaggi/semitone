@@ -499,6 +499,18 @@ namespace G4 {
             return null;
         }
 
+        public bool handle_escape () {
+            var stack = get_current_stack ();
+            if (stack != null) {
+                var children = ((!)stack).get_children ();
+                if (children.length > 1) {
+                    ((!)stack).pop ();
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private void initialize_library_page () {
             if (_library_uri != null) {
                 open_page ((!)_library_uri);
