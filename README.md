@@ -54,7 +54,10 @@ sudo apk add vala meson gtk4.0-dev libadwaita-dev gstreamer-dev gst-plugins-base
 
 ### Flatpak
 
-Pre-built flatpak packages are available in [flatpak-downloads](https://gitlab.com/Lalaggi/semitone/-/tree/main/flatpak-downloads). May be slightly behind the latest version.
+```bash
+flatpak remote-add --if-not-exists lalaggi-flatpak https://flatpak.lalaggi.xyz/lalaggi-flatpak.flatpakrepo
+flatpak install lalaggi-flatpak xyz.lalaggi.semitone
+```
 
 ### Recommended: [gitpkg](https://gitlab.com/Lalaggi/gitpkg)
 
