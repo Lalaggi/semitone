@@ -1,6 +1,6 @@
 namespace G4 {
 
-    private string? get_all_string_metadata_text (string uri) {
+    internal string? get_all_string_metadata_text (string uri) {
         var file = GLib.File.new_for_uri (uri);
         if (!file.query_exists ())
             return null;
@@ -72,7 +72,7 @@ namespace G4 {
         return null;
     }
 
-    private static string? extract_youtube_id_from_text (string text, out string? found_in_tag = null) {
+    internal static string? extract_youtube_id_from_text (string text, out string? found_in_tag = null) {
         found_in_tag = null;
         if (text.length == 0) return null;
 
@@ -107,7 +107,7 @@ namespace G4 {
         return null;
     }
 
-    private string? get_youtube_id_from_all_metadata (string uri) {
+    internal string? get_youtube_id_from_all_metadata (string uri) {
         var metadata_text = get_all_string_metadata_text (uri);
         if (metadata_text == null)
             return null;
@@ -115,7 +115,7 @@ namespace G4 {
         return extract_youtube_id_from_text ((!)metadata_text, out found_in_tag);
     }
 
-    private static string? extract_youtube_id (string comment) {
+    internal static string? extract_youtube_id (string comment) {
         string? dummy;
         return extract_youtube_id_from_text (comment, out dummy);
     }

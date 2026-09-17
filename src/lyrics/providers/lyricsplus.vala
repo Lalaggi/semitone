@@ -9,11 +9,12 @@ namespace G4 {
         var duration_sec = (int) (duration_ms / 1000);
         string[] base_urls = {
             "https://lyricsplus.prjktla.workers.dev",
-            "https://lyricsplus.prjktla.my.id"
+            "https://lyricsplus.prjktla.my.id",
+            "https://lyricsplus.binimum.org"
         };
         string? result = null;
         foreach (var base_url in base_urls) {
-            var url = "%s/v2/lyrics/get?title=%s&artist=%s&duration=%d&source=apple,lyricsplus,musixmatch,spotify,musixmatch-word".printf (
+            var url = "%s/v2/lyrics/get?title=%s&artist=%s&duration=%d&source=apple,lyricsplus,musixmatch,spotify,musixmatch-word,qq,deezer".printf (
                 base_url,
                 Uri.escape_string (music.title, null, false),
                 Uri.escape_string (music.artist, null, false),

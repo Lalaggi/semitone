@@ -152,44 +152,6 @@ namespace G4 {
         return results;
     }
 
-    private async PaxSenixResult[] paxsenix_search_spotify (string query, GLib.Cancellable? cancellable = null) {
-        var url = "https://lyrics.paxsenix.org/spotify/search?q=%s".printf (
-            Uri.escape_string (query, null, false));
-        string[,] headers = { { "User-Agent", "Semitone/1.0" } };
-        var body = yield lyrics_http_get_with_headers (url, headers, cancellable);
-        if (cancellable != null && ((!)cancellable).is_cancelled ()) return {};
-        if (body == null) return {};
-
-        PaxSenixResult[] results = {};
-        try {
-            var parser = new Json.Parser ();
-            parser.load_from_data ((!)body);
-            var arr = parser.get_root ()?.get_array ();
-            if (arr == null) return {};
-            ((!)arr).foreach_element ((a, i, node) => {
-                var obj = node.get_object ();
-                if (obj == null) return;
-                var o = (!)obj;
-                var id          = o.has_member ("trackId")       ? o.get_string_member ("trackId")        : "";
-                var disp_name   = o.has_member ("name")          ? o.get_string_member ("name")           : "";
-                var disp_artist = o.has_member ("artistName")    ? o.get_string_member ("artistName")     : "";
-                int dur_ms      = 0;
-                if (o.has_member ("duration")) {
-                    var dur_str = o.get_string_member ("duration");
-                    var parts = dur_str.split (":");
-                    if (parts.length == 2)
-                        dur_ms = (int.parse (parts[0]) * 60 + int.parse (parts[1])) * 1000;
-                }
-                if (id.length > 0) {
-                    PaxSenixResult r = { id, disp_name, disp_artist, dur_ms, 0.0 };
-                    results += r;
-                }
-            });
-        } catch (Error e) {
-        }
-        return results;
-    }
-
     private async string? paxsenix_fetch_track (string id, GLib.Cancellable? cancellable = null) {
         var url = "https://lyrics.paxsenix.org/apple-music/lyrics?id=%s".printf (
             Uri.escape_string (id, null, false));
@@ -252,15 +214,6 @@ namespace G4 {
             var raw_results = yield paxsenix_search_itunes (query, cancellable);
             if (raw_results.length > 0)
                 scored = paxsenix_score (raw_results, music.title, music.artist, duration_ms);
-        }
-
-        if (scored.length == 0) {
-            foreach (var query in queries) {
-                if (scored.length > 0) break;
-                var raw_results = yield paxsenix_search_spotify (query, cancellable);
-                if (raw_results.length > 0)
-                    scored = paxsenix_score (raw_results, music.title, music.artist, duration_ms);
-            }
         }
 
         if (scored.length == 0)

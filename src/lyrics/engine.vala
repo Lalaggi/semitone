@@ -33,11 +33,11 @@ namespace G4 {
         double order_score = GLib.Math.fmax (0.0, (10.0 - provider_index) * 1.5);
 
         double trust_bonus = 0.0;
-        if (provider_name == "BetterLyrics" || provider_name == "SimpMusic")
+        if (provider_name == "BetterLyrics" || provider_name == "Unison" || provider_name == "BiniLyrics" || provider_name == "SimpMusic")
             trust_bonus = 4.0;
         else if (provider_name == "LRCLib")
             trust_bonus = 3.0;
-        else if (provider_name == "LyricsPlus" || provider_name == "NetEase")
+        else if (provider_name == "LyricsPlus" || provider_name == "NetEase" || provider_name == "KuGou")
             trust_bonus = 2.0;
         else if (provider_name == "PaxSenix")
             trust_bonus = 1.0;
@@ -88,6 +88,15 @@ namespace G4 {
                 order_str = DEFAULT_PROVIDER_ORDER;
             string[] provider_order = order_str.split (",");
 
+            // Append any provider not yet in the saved order (forward compat,
+            // so newly added providers are still queried for existing users)
+            foreach (var p in LYRICS_PROVIDERS) {
+                bool found = false;
+                foreach (var id in provider_order)
+                    if (id.strip () == p.id) { found = true; break; }
+                if (!found) provider_order += p.id;
+            }
+
             var app = (Application) GLib.Application.get_default ();
             var duration = app.player.duration;
             var duration_ms = duration != Gst.CLOCK_TIME_NONE ? (int) (GstPlayer.to_second (duration) * 1000) : 0;
@@ -120,6 +129,8 @@ namespace G4 {
                             lyrics_format_synced (c.format),
                             lyrics_format_source (c.format)));
                         process_candidate (c);
+                    } else {
+                        lyrics_log ("%s: no match".printf (pid));
                     }
                 } catch (Error e) {
                     lyrics_log ("%s: error: %s".printf (pid, e.message));

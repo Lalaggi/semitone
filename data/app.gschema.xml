@@ -154,12 +154,20 @@
       <default>true</default>
       <summary>Fetch lyrics from BetterLyrics</summary>
     </key>
+    <key name="lyrics-unison-enabled" type="b">
+      <default>true</default>
+      <summary>Fetch lyrics from Unison (BetterLyrics community source)</summary>
+    </key>
+    <key name="lyrics-binimum-enabled" type="b">
+      <default>true</default>
+      <summary>Fetch lyrics from BiniLyrics</summary>
+    </key>
     <key name="lyrics-simpmusic-enabled" type="b">
       <default>true</default>
       <summary>Fetch lyrics from SimpMusic</summary>
     </key>
     <key name="lyrics-lyricsplus-enabled" type="b">
-      <default>true</default>
+      <default>false</default>
       <summary>Fetch lyrics from LyricsPlus</summary>
     </key>
     <key name="lyrics-lrclib-enabled" type="b">
@@ -167,11 +175,15 @@
       <summary>Fetch lyrics from LRCLib</summary>
     </key>
     <key name="lyrics-netease-enabled" type="b">
-      <default>false</default>
+      <default>true</default>
       <summary>Enable NetEase lyrics provider</summary>
     </key>
+    <key name="lyrics-kugou-enabled" type="b">
+      <default>true</default>
+      <summary>Fetch lyrics from KuGou</summary>
+    </key>
     <key name="lyrics-megalobiz-enabled" type="b">
-      <default>false</default>
+      <default>true</default>
       <summary>Enable Megalobiz lyrics provider</summary>
     </key>
     <key name="lyrics-genius-enabled" type="b">
@@ -204,7 +216,7 @@
       <summary>Auto-scroll resume delay in milliseconds after user scroll</summary>
     </key>
     <key name="lyrics-provider-order" type="s">
-      <default>'betterlyrics,simpmusic,musicbrainz,lyricsplus,lrclib,paxsenix,netease,megalobiz,genius,musixmatch'</default>
+      <default>'betterlyrics,unison,binimum,lrclib,paxsenix,netease,kugou,musicbrainz,simpmusic,megalobiz,lyricsplus,genius,musixmatch'</default>
       <summary>Comma-separated provider priority order</summary>
     </key>
     <key name="sheet-position" type="u">
