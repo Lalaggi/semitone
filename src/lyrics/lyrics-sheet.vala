@@ -495,6 +495,14 @@ namespace G4 {
             get { return _app.settings.get_uint ("lyrics-voice-display-mode"); }
         }
 
+        private string voice_type_label (string vtype) {
+            // Agent-type badge fallback for nameless voices (TTML agent
+            // type= / @[id,...,type=X]). Only group materializes ("Group");
+            // a nameless person falls through to the coded id (V3).
+            if (vtype.down () == "group") return "Group";
+            return "";
+        }
+
         private string voice_badge_markup (LyricLine line) {
             uint mode = voice_display_mode; // 0 none, 1 coded, 2 pretty (recommended) with fallback
             if (mode == 0) return "";
@@ -508,14 +516,17 @@ namespace G4 {
                 var color_attr = color.length > 0 ? " foreground='%s'".printf(color) : "";
                 return "<span size='small' alpha='75%%'%s weight='bold'>%s  </span>".printf(color_attr, Markup.escape_text (pretty));
             }
-            // mode 2 pretty with fallback to coded -> none
+            // mode 2 pretty with fallback: pretty name -> agent type -> coded id -> none
             string pretty = "";
             if (line.voice_role == "bg") {
                 // hardcoded pretty for bg
                 if (line.voice_display.length > 0) pretty = line.voice_display;
                 else pretty = "Background";
             } else if (line.voice_display.length > 0) pretty = line.voice_display;
-            else if (line.voice_role.length > 0) pretty = line.voice_role.up ();
+            else if (line.voice_role.length > 0) {
+                pretty = voice_type_label (line.voice_type);
+                if (pretty.length == 0) pretty = line.voice_role.up ();
+            }
             else return "";
             var color2 = voice_color_for_role (line.voice_role);
             var color_attr2 = color2.length > 0 ? " foreground='%s'".printf(color2) : "";
@@ -553,7 +564,7 @@ namespace G4 {
             var badge = voice_badge_markup (line);
             if (line.words.length == 0) {
                 var txt = Markup.escape_text (line.text.length > 0 ? line.text : "\u00B7");
-                LyricWord empty = { "", 0, 0, "", "" };
+                LyricWord empty = { "", 0, 0, "", "", true };
                 var la = style_attrs_for_word (line, empty);
                 var base_alpha = line.voice_role == "bg" ? "60%%" : "85%%";
                 if (la.length > 0) return badge + "<span alpha='%s'%s>%s</span>".printf(base_alpha, la, txt);
@@ -561,7 +572,11 @@ namespace G4 {
             }
             var sb = new StringBuilder ();
             sb.append (badge);
-            foreach (var word in line.words) {
+            for (var wi = 0; wi < line.words.length; wi++) {
+                var word = line.words[wi];
+                // Syllable continuations glue to the previous unit with no
+                // space; a space is emitted only before a new word.
+                if (wi > 0 && word.word_start) sb.append_c (' ');
                 var escaped = Markup.escape_text (word.text);
                 var extra = style_attrs_for_word (line, word);
                 bool has_underline = extra.contains ("underline");
@@ -573,21 +588,24 @@ namespace G4 {
                     else word_progress = 1.0;
                 } else if (sec >= word.end_sec) word_progress = 1.0;
                 if (sec < 0) {
-                    sb.append ("<span alpha='42%%'%s>%s</span> ".printf (extra, escaped));
+                    sb.append ("<span alpha='42%%'%s>%s</span>".printf (extra, escaped));
                 } else if (sec + 0.05 >= word.start_sec && sec < word.end_sec) {
                     var alpha = 42 + (int) (58 * progress);
-                    // active word gets underline + optional bold boost unless already styled
-                    var u = has_underline ? "" : " underline='single'";
+                    // bg lines: no underline/outline highlight; other voices get underline
+                    string u = "";
+                    if (line.voice_role != "bg") {
+                        u = has_underline ? "" : " underline='single'";
+                    }
                     // add foreground tint for voice color on active word if non-bg
                     var col = voice_color_for_role (line.voice_role);
                     var fg = (col.length > 0 && line.voice_role != "bg") ? " foreground='%s'".printf(col) : "";
-                    sb.append ("<span alpha='%d%%'%s%s%s>%s</span> ".printf (alpha, extra, u, fg, escaped));
+                    sb.append ("<span alpha='%d%%'%s%s%s>%s</span>".printf (alpha, extra, u, fg, escaped));
                 } else if (sec >= word.end_sec) {
                     // past words: slightly bolder past vs future, with intra-word highlight
                     var past_alpha = 68 + (int)(8 * word_progress);
-                    sb.append ("<span alpha='%d%%'%s>%s</span> ".printf (past_alpha, extra, escaped));
+                    sb.append ("<span alpha='%d%%'%s>%s</span>".printf (past_alpha, extra, escaped));
                 } else {
-                    sb.append ("<span alpha='42%%'%s>%s</span> ".printf (extra, escaped));
+                    sb.append ("<span alpha='42%%'%s>%s</span>".printf (extra, escaped));
                 }
             }
             return sb.str.strip ();
@@ -832,9 +850,8 @@ namespace G4 {
                         row.remove_css_class ("lyrics-row-inactive");
                         row.remove_css_class ("lyrics-row-near");
                         row.add_css_class ("lyrics-row-active");
-                        // voice-specific tint
+                        // bg lines act independently but without outline/background highlight
                         row.remove_css_class ("lyrics-voice-bg-active");
-                        if (line.voice_role == "bg") row.add_css_class ("lyrics-voice-bg-active");
                         // set per-voice border color via inline? we use CSS class generically
                     } else {
                         row.remove_css_class ("lyrics-row-active");
@@ -892,7 +909,7 @@ namespace G4 {
             var badge = voice_badge_markup (line);
             if (line.words.length == 0) {
                 var txt = Markup.escape_text (line.text.length > 0 ? line.text : "·");
-                LyricWord empty = { "", 0, 0, "", "" };
+                LyricWord empty = { "", 0, 0, "", "", true };
                 var la = style_attrs_for_word (line, empty);
                 var alpha = line.voice_role == "bg" ? "60%%" : "85%%";
                 if (la.length > 0) return badge + "<span alpha='%s'%s>%s</span>".printf(alpha, la, txt);
@@ -900,25 +917,30 @@ namespace G4 {
             }
             var sb = new StringBuilder ();
             sb.append (badge);
-            foreach (var word in line.words) {
+            for (var wi = 0; wi < line.words.length; wi++) {
+                var word = line.words[wi];
+                if (wi > 0 && word.word_start) sb.append_c (' ');
                 var escaped = Markup.escape_text (word.text);
                 var extra = style_attrs_for_word (line, word);
                 bool has_underline = extra.contains ("underline");
                 var col = voice_color_for_role (line.voice_role);
                 var fg_active = (col.length > 0 && line.voice_role != "bg") ? " foreground='%s'".printf(col) : "";
                 if (sec < 0) {
-                    sb.append ("<span alpha='42%%'%s>%s</span> ".printf (extra, escaped));
+                    sb.append ("<span alpha='42%%'%s>%s</span>".printf (extra, escaped));
                 } else if (sec >= word.start_sec && sec < word.end_sec) {
-                    var u = has_underline ? "" : " underline='single'";
-                    sb.append ("<span alpha='100%%'%s%s%s>%s</span> ".printf (extra, u, fg_active, escaped));
+                    string u = "";
+                    if (line.voice_role != "bg") {
+                        u = has_underline ? "" : " underline='single'";
+                    }
+                    sb.append ("<span alpha='100%%'%s%s%s>%s</span>".printf (extra, u, fg_active, escaped));
                 } else if (sec >= word.end_sec) {
                     double word_progress = 0.0;
                     var dur = word.end_sec - word.start_sec;
                     if (dur > 0.02) word_progress = 1.0;
                     var past_alpha = 68;
-                    sb.append ("<span alpha='%d%%'%s>%s</span> ".printf (past_alpha, extra, escaped));
+                    sb.append ("<span alpha='%d%%'%s>%s</span>".printf (past_alpha, extra, escaped));
                 } else {
-                    sb.append ("<span alpha='42%%'%s>%s</span> ".printf (extra, escaped));
+                    sb.append ("<span alpha='42%%'%s>%s</span>".printf (extra, escaped));
                 }
             }
             return sb.str.strip ();
@@ -1276,10 +1298,6 @@ namespace G4 {
                 .lyrics-row-active {
                     opacity: 1.0;
                     transition: opacity 220ms ease-out;
-                }
-                .lyrics-voice-bg-active {
-                    background: alpha(@accent_bg_color, 0.04);
-                    border-radius: 8px;
                 }
                 .lyrics-word {
                     font-size: 20px;

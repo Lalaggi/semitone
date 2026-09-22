@@ -6,6 +6,12 @@ namespace G4 {
         public double end_sec;
         public string style;
         public string effect;
+        // Syllable handling: true = this unit starts a new display word
+        // (preceded by a space, or first unit of the line); false = syllable
+        // continuation glued to the previous unit with no space.
+        // Mirrors TTML/ELRC encoding where space separates words and
+        // adjacency means same word: <span>Def</span><span>y</span>.
+        public bool word_start;
     }
 
     public struct LyricLine {
@@ -17,6 +23,18 @@ namespace G4 {
         public string style;
         public string effect;
         public string lang;
+        // Performer/actor credit (e.g. "Idina Menzel") while voice_display
+        // holds the character/pretty name (e.g. "Elphaba"). Both are declared
+        // once per file in @[...] voice-table lines, never inline.
+        public string voice_credit;
+        // Agent kind from the TTML head (e.g. "person" | "group") or the
+        // @[id,...,type=X] table token. Lets nameless ids (v1000) render a
+        // type label instead of a bare coded id. Empty when unknown.
+        public string voice_type;
+        // Song section (e.g. "Chorus") from the TTML div songPart or a bare
+        // [Chorus] marker line. Carried for format completeness; the
+        // renderer intentionally ignores it.
+        public string section;
     }
 
     public struct LyricsCandidate {

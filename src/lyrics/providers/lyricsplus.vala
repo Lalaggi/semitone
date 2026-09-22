@@ -63,7 +63,7 @@ namespace G4 {
         var sb = new StringBuilder ();
         if (type == "Word") {
             // v2 inline Variant A absolute: collect per-line word timings then emit
-            // <mm:ss.xx:mm:ss.xx>Word <mm:ss.xx:mm:ss.xx>Word ...
+            // <mm:ss.xx,mm:ss.xx>Word <mm:ss.xx,mm:ss.xx>Word ...
             int64 line_start_ms = -1;
             string[] line_texts = {};
             int64[] line_times = {};
@@ -85,7 +85,7 @@ namespace G4 {
                     var start_ts = format_ms_as_timestamp (start_ms);
                     var end_ts = format_ms_as_timestamp (end_ms);
                     if (wi > 0) sb.append_c (' ');
-                    sb.append ("<%s:%s>%s".printf (start_ts, end_ts, line_texts[wi]));
+                    sb.append ("<%s,%s>%s".printf (start_ts, end_ts, line_texts[wi]));
                 }
                 sb.append_c ('\n');
             }

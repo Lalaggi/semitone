@@ -47,18 +47,22 @@ namespace G4 {
             bool has_inline_timing = false;
             foreach (var line in lines) {
                 var ls = line.strip ();
-                if (ls.has_prefix ("<")) {
-                    if (looks_like_v2_timing_line (ls)) {
+                // Timing lines may carry a leading {…} voice/style block;
+                // run all checks on the units part after it.
+                var units = timing_units_part (ls);
+                if (units != null) {
+                    var uparts = (!)units;
+                    if (looks_like_v2_timing_line (uparts)) {
                         has_v2_word_timing_line = true;
-                    } else if (ls.contains ("|") && ls.contains (":") && ls.contains (">")) {
+                    } else if (uparts.contains ("|") && uparts.contains (":") && uparts.contains (">")) {
                         // v1 bulk: <word:1.0:2.0|...> — not v2, has pipe and word text
                         has_v1_word_timing_line = true;
-                    } else if (ls.contains (":") && ls.contains (">")) {
+                    } else if (uparts.contains (":") && uparts.contains (">")) {
                         // fallback: any <...> with colon but not v2 could still be v1-like
                         // treat as v1 if inside not digit-start
-                        var gt = ls.index_of_char ('>');
+                        var gt = uparts.index_of_char ('>');
                         if (gt > 0) {
-                            var inside = ls.substring (1, gt - 1).strip ();
+                            var inside = uparts.substring (1, gt - 1).strip ();
                             if (inside.length > 0 && !inside[0].isdigit ())
                                 has_v1_word_timing_line = true;
                         }
@@ -71,7 +75,8 @@ namespace G4 {
                     // Check for inline timestamps, possibly preceded by a voice
                     // prefix like "v1:" — e.g. [00:16.83]v1:<00:16.834>text
                     // Extended LRC has inline <mm:ss.xx> after the header timestamp;
-                    // LRC+ v2 has separate line starting with "<", not inline.
+                    // LRC+ v2 has a separate timing line ('<…>' units,
+                    // optionally '{…}<…>' with a leading voice/style block).
                     if (after_bracket.has_prefix ("<")) {
                         if (after_bracket.contains (":") && after_bracket.contains (">")) {
                             // ensure it's not a v2 attr block like {voice:...} after ]
@@ -85,9 +90,14 @@ namespace G4 {
                             if (has_inline_timing) break;
                         }
                     } else {
+                        // Inline word timings, optionally prefixed with a
+                        // voice tag like "v1:" (Paxsenix elrcMultiPerson).
                         var lt_pos = after_bracket.index_of_char ('<');
-                        if (lt_pos > 0 && lt_pos < 4) {
-                            var inline = after_bracket.substring (lt_pos);
+                        if (lt_pos >= 0) {
+                            var prefix = after_bracket.substring (0, lt_pos).strip ();
+                            bool prefix_ok = prefix.length == 0 || is_voice_prefix (prefix);
+                            if (prefix_ok) {
+                                var inline = after_bracket.substring (lt_pos);
                             if (inline.contains (":") && inline.contains (">")) {
                                 var gt_inline2 = inline.index_of_char ('>');
                                 if (gt_inline2 > 0) {
@@ -96,6 +106,7 @@ namespace G4 {
                                         has_inline_timing = true;
                                 }
                                 if (has_inline_timing) break;
+                            }
                             }
                         }
                     }
@@ -203,10 +214,278 @@ namespace G4 {
                 ls.has_prefix ("[by:")     || ls.has_prefix ("[length:") ||
                 ls.has_prefix ("[re:")     || ls.has_prefix ("[ve:"))
                 continue;
+            // Voice-table definitions ([@...] legacy, @[...] canonical) are
+            // file-level metadata: must-ignore for legacy players and
+            // consumed separately via parse_voice_defs() before stripping.
+            // Canonical form puts '@' first (@[v1:...]) so even dumb
+            // '['-scanning players skip the line instantly.
+            if (ls.has_prefix ("[@") || ls.has_prefix ("@["))
+                continue;
             sb.append (ls);
             sb.append_c ('\n');
         }
         return sb.str;
+    }
+
+    // ── Voice table (@[id,"name","credit",type=x]) ───────────────────
+    //
+    // File-level voice definitions, e.g.:
+    //   @[v1,"Glinda","Kristin Chenoweth",type=person]
+    //   @[v2,"Elphaba","Idina Menzel",type=person]
+    //   @[v1000,type=group]
+    // Grammar: "@" "[" voice-id [":" display ["|" credit]] "]"
+    // voice-id = 1*(ALNUM / "-" / "_"); display/credit tokens may be
+    // single- or double-quoted (required if they contain '|' or ']').
+    // '@' comes first so legacy '['-anchored players skip the line without
+    // even trying to parse a timestamp. The legacy [@...] spelling is
+    // accepted on read. These lines are must-ignore for legacy players and
+    // are stripped by strip_lrc_metadata(); per-line display names are
+    // resolved from this table so timing lines only carry the short {v1}
+    // tag and headers stay completely bare (no {…} at all).
+
+    private bool is_voice_id_char (char c) {
+        return c.isalnum () || c == '-' || c == '_';
+    }
+
+    private bool is_voice_prefix (string prefix) {
+        // e.g. "v1:" — voice id + colon (Paxsenix elrcMultiPerson inline tag)
+        if (!prefix.has_suffix (":")) return false;
+        var id = prefix.substring (0, prefix.length - 1).strip ();
+        if (id.length == 0) return false;
+        for (var k = 0; k < id.length; k++) {
+            if (!is_voice_id_char (id[k])) return false;
+        }
+        return true;
+    }
+
+    private void parse_voice_defs (string raw,
+                                   out HashTable<string,string> displays,
+                                   out HashTable<string,string> credits,
+                                   out HashTable<string,string> types) {
+        displays = new HashTable<string,string> (str_hash, str_equal);
+        credits = new HashTable<string,string> (str_hash, str_equal);
+        types = new HashTable<string,string> (str_hash, str_equal);
+        foreach (var line in raw.split ("\n")) {
+            var ls = line.strip ();
+            // Canonical @[...] first; legacy [@...] accepted on read.
+            string? inner = null;
+            if (ls.has_prefix ("@[") && ls.has_suffix ("]")) {
+                inner = ls.substring (2, ls.length - 3).strip ();
+            } else if (ls.has_prefix ("[@") && ls.has_suffix ("]")) {
+                inner = ls.substring (2, ls.length - 3).strip ();
+            }
+            if (inner == null) continue;
+            var body = (!)inner;
+            if (body.length == 0) continue;
+            string id;
+            string rest = "";
+            // Id runs up to the first ':' (legacy @[v1:...]) or ','
+            // (canonical @[v1,...]).
+            var colon = body.index_of_char (':');
+            var comma = body.index_of_char (',');
+            int split_at = -1;
+            if (colon >= 0 && comma >= 0) split_at = int.min (colon, comma);
+            else if (colon >= 0) split_at = colon;
+            else if (comma >= 0) split_at = comma;
+            if (split_at < 0) {
+                id = body.strip ();
+            } else {
+                id = body.substring (0, split_at).strip ();
+                rest = body.substring (split_at + 1).strip ();
+            }
+            if (id.length == 0) continue;
+            bool id_ok = true;
+            for (var k = 0; k < id.length; k++) {
+                if (!is_voice_id_char (id[k])) { id_ok = false; break; }
+            }
+            if (!id_ok) continue;
+            if (rest.length == 0) {
+                // Bare declaration @[v3]: id exists, no names. Only set if
+                // not already defined so a later full def wins; an earlier
+                // full def is kept (don't overwrite with empty).
+                string? have_display = displays.lookup (id);
+                string? have_credit = credits.lookup (id);
+                if (have_display == null && have_credit == null) {
+                    displays.set (id, "");
+                }
+                continue;
+            }
+            // One separator per line: unquoted ',' selects the canonical
+            // comma form (@[v1,"Glinda","Credit",type=person]); otherwise the
+            // legacy pipe form (@[v1:Glinda|"Credit"|type=person]). Quoted
+            // sections are honoured either way. A legacy display containing
+            // a literal comma must be quoted.
+            char sep = '|';
+            {
+                bool q_single = false;
+                bool q_double = false;
+                for (var k = 0; k < rest.length; k++) {
+                    var c = rest[k];
+                    if (c == '\'' && !q_double) q_single = !q_single;
+                    else if (c == '"' && !q_single) q_double = !q_double;
+                    else if (c == ',' && !q_single && !q_double) { sep = ','; break; }
+                }
+            }
+            string[] tokens = {};
+            var cur = new StringBuilder ();
+            bool in_single = false;
+            bool in_double = false;
+            for (var k = 0; k < rest.length; k++) {
+                var c = rest[k];
+                if (c == '\'' && !in_double) in_single = !in_single;
+                else if (c == '"' && !in_single) in_double = !in_double;
+                if (c == sep && !in_single && !in_double) {
+                    tokens += cur.str;
+                    cur = new StringBuilder ();
+                    continue;
+                }
+                cur.append_c (c);
+            }
+            tokens += cur.str;
+            // Positional name/credit plus an optional type= token in any
+            // slot: @[v1000,type=group], @[v1,"Glinda","Kristin Chenoweth",type=person].
+            // A quoted "type=X" stays literal text; only a bare token counts.
+            string display = "";
+            string credit = "";
+            string vtype = "";
+            string[] positional = {};
+            foreach (var raw_tok in tokens) {
+                var t = raw_tok.strip ();
+                bool quoted = t.length >= 2 &&
+                    ((t[0] == '"' && t[t.length - 1] == '"') ||
+                     (t[0] == '\'' && t[t.length - 1] == '\''));
+                if (!quoted && t.down ().has_prefix ("type=")) {
+                    var tv = t.substring (5).strip ();
+                    if (tv.length > 0 && vtype.length == 0) vtype = tv.down ();
+                    continue;
+                }
+                positional += raw_tok;
+            }
+            if (positional.length > 0) display = decode_html_entities (strip_quotes (positional[0]));
+            if (positional.length > 1) credit = decode_html_entities (strip_quotes (positional[1]));
+            if (display.length > 0) displays.set (id, display);
+            else {
+                string? have_display = displays.lookup (id);
+                if (have_display == null) displays.set (id, "");
+            }
+            if (credit.length > 0) credits.set (id, credit);
+            if (vtype.length > 0) types.set (id, vtype);
+        }
+    }
+
+    private string quote_voice_token (string s) {
+        if (s.length == 0) return s;
+        if (s.contains ("|") || s.contains (",") || s.contains ("]") || s.contains ("\"") ||
+            s.has_prefix (" ") || s.has_suffix (" ") || s.contains ("  ")) {
+            return "\"%s\"".printf (s.replace ("\"", "&quot;"));
+        }
+        // Quote tokens containing spaces so @[v1,"Kristin Chenoweth",type=person]
+        // stays a single token on read.
+        if (s.contains (" ")) return "\"%s\"".printf (s);
+        return s;
+    }
+
+    // ── Section markers ([Chorus]) ────────────────────────────────────
+    // Bare [Name] lines carry the song structure (TTML div songPart,
+    // Paxsenix plain [Intro]/[Verse]/[Chorus] headers). They are format
+    // metadata, not lyrics: legacy players fail the timestamp parse and
+    // skip them, the LRC+ parser folds them into LyricLine.section, and
+    // the renderer intentionally ignores them.
+
+    private string? parse_section_marker (string line) {
+        var ls = line.strip ();
+        if (!ls.has_prefix ("[") || !ls.has_suffix ("]")) return null;
+        var inner = ls.substring (1, ls.length - 2).strip ();
+        if (inner.length == 0) return null;
+        if (inner.contains (":") || inner.contains (".") || inner.contains ("<") ||
+            inner.contains ("@") || inner.contains ("{") || inner.contains ("}")) return null;
+        if (parse_timestamp (inner) >= 0) return null;
+        var key = inner.down ().replace (" ", "").replace ("-", "").replace ("_", "");
+        switch (key) {
+            case "intro": return "Intro";
+            case "verse": return "Verse";
+            case "chorus": return "Chorus";
+            case "bridge": return "Bridge";
+            case "outro": return "Outro";
+            case "hook": return "Hook";
+            case "refrain": return "Refrain";
+            case "prechorus": return "Pre-Chorus";
+            case "postchorus": return "Post-Chorus";
+            case "interlude": return "Interlude";
+            case "instrumental": return "Instrumental";
+            case "solo": return "Solo";
+            case "breakdown": return "Breakdown";
+            case "buildup": return "Buildup";
+            case "drop": return "Drop";
+            case "prelude": return "Prelude";
+            case "postlude": return "Postlude";
+            case "coda": return "Coda";
+            case "vamp": return "Vamp";
+            case "tag": return "Tag";
+            case "reprise": return "Reprise";
+            case "overture": return "Overture";
+            case "finale": return "Finale";
+            case "prologue": return "Prologue";
+            case "epilogue": return "Epilogue";
+            case "skit": return "Skit";
+            default: return null;
+        }
+    }
+
+    // ── Word joining (syllable-aware) ─────────────────────────────────
+    // Display text is words joined with " " at word starts, "" for syllable
+    // continuations. Mirrors the TTML/ELRC source encoding.
+
+    public string join_lyric_words (LyricWord[] words) {
+        var sb = new StringBuilder ();
+        for (var i = 0; i < words.length; i++) {
+            if (i > 0 && words[i].word_start) sb.append_c (' ');
+            sb.append (words[i].text);
+        }
+        return sb.str;
+    }
+
+    // ── v2 timestamp pair ─────────────────────────────────────────────
+    // Canonical separator is ','  (<00:01.31,00:01.66>); '|' accepted;
+    // legacy double-colon (<00:01.31:00:01.66>) accepted on read.
+
+    private bool parse_v2_timestamp_pair (string inside, out int64 start_ms, out int64 end_ms) {
+        start_ms = -1; end_ms = -1;
+        string? start_ts = null;
+        string? end_ts = null;
+        if (inside.contains (",")) {
+            var parts = inside.split (",", 2);
+            if (parts.length == 2) { start_ts = parts[0].strip (); end_ts = parts[1].strip (); }
+        } else if (inside.contains ("|")) {
+            var parts = inside.split ("|", 2);
+            if (parts.length == 2) {
+                var a = parts[0].strip ();
+                var b = parts[1].strip ();
+                // Only treat as pair if both sides are timestamps (v1 bulk
+                // also uses '|' but starts with word text, not digits).
+                if (a.length > 0 && a[0].isdigit () && parse_timestamp (a) >= 0 &&
+                    b.length > 0 && parse_timestamp (b) >= 0) {
+                    start_ts = a; end_ts = b;
+                } else {
+                    return false;
+                }
+            }
+        } else {
+            var parts = inside.split (":");
+            if (parts.length == 4) {
+                start_ts = "%s:%s".printf (parts[0], parts[1]);
+                end_ts = "%s:%s".printf (parts[2], parts[3]);
+            } else if (parts.length == 2) {
+                start_ms = parse_timestamp (inside);
+                return start_ms >= 0;
+            } else {
+                return false;
+            }
+        }
+        if (start_ts == null || end_ts == null) return false;
+        start_ms = parse_timestamp ((!)start_ts);
+        end_ms = parse_timestamp ((!)end_ts);
+        return start_ms >= 0 && end_ms >= 0;
     }
 
     // ── Parsers ───────────────────────────────────────────────────────
@@ -233,14 +512,36 @@ namespace G4 {
             if (kv.length == 0) continue;
             var key = kv[0].strip ().down ();
             var val = kv.length > 1 ? kv[1].strip () : "";
-            if (val.length == 0) continue;
+            if (val.length == 0) {
+                // Bare token with no value, e.g. the "v2" in {v2|style:bold}:
+                // treat as voice shorthand unless it is a known key name.
+                // (Pure {v2} is handled by the alias rule above; this covers
+                // the mixed short+KV form on write.)
+                if (voice.length == 0) {
+                    var bare = strip_quotes (kv[0].strip ());
+                    bool bare_ok = bare.length > 0;
+                    for (var k = 0; bare_ok && k < bare.length; k++) {
+                        if (!is_voice_id_char (bare[k])) bare_ok = false;
+                    }
+                    switch (bare.down ()) {
+                        case "voice": case "display": case "name": case "label":
+                        case "agent-name": case "style": case "effect":
+                        case "lang": case "color":
+                            bare_ok = false;
+                            break;
+                        default: break;
+                    }
+                    if (bare_ok) voice = bare;
+                }
+                continue;
+            }
             switch (key) {
                 case "voice": {
                     // Support voice:id[,Display] or voice:id,"Display" -> split on comma
                     var parts = val.split (",", 2);
                     voice = strip_quotes (parts[0].strip ());
                     if (parts.length > 1) {
-                        var disp = strip_quotes (parts[1].strip ());
+                        var disp = decode_html_entities (strip_quotes (parts[1].strip ()));
                         if (disp.length > 0) voice_display = disp;
                     }
                     break;
@@ -249,7 +550,7 @@ namespace G4 {
                 case "name":
                 case "label":
                 case "agent-name": {
-                    voice_display = strip_quotes (val);
+                    voice_display = decode_html_entities (strip_quotes (val));
                     break;
                 }
                 case "style": {
@@ -288,33 +589,79 @@ namespace G4 {
             if (tag_end >= 0) {
                 var inner = rest.substring (1, tag_end - 1);
                 parse_attr_block (inner, out voice, out voice_display, out style, out effect, out lang);
+                // "v1" is the default voice: normalize to "" so {v1},
+                // {voice:v1} and untagged lines share one canonical id
+                // (matches the TTML importer, which maps agent v1 to "").
+                if (voice == "v1") voice = "";
                 text_without_block = rest.substring (tag_end + 1).strip ();
             }
         }
     }
 
-    private bool looks_like_v2_timing_line (string line) {
+    // ── Timing-line attr blocks ─────────────────────────────────────
+    //
+    // Voice/styling tags live ONLY on the word-timing line, never on the
+    // header, so legacy players (which read [mm:ss.xx]Text and skip
+    // everything else) always see clean text:
+    //   [00:10.00]Hello world
+    //   {v1}<00:10.00,00:10.32>Hello <00:10.33,00:10.80>world
+    // The leading block uses the same attr grammar as header blocks
+    // ({v1} alias, {v1|style:bold}); only the FIRST block — before the
+    // first '<' — is line-level, blocks after a '>' stay per-word.
+
+    private string? timing_units_part (string line) {
+        // Returns the units substring of a timing line (after the optional
+        // leading {…} block), or null if the line is not timing-shaped.
         var ls = line.strip ();
-        if (!ls.has_prefix ("<")) return false;
+        if (ls.has_prefix ("<")) return ls;
+        if (ls.has_prefix ("{")) {
+            var tag_end = ls.index_of_char ('}');
+            if (tag_end >= 0) {
+                var units = ls.substring (tag_end + 1).strip ();
+                if (units.has_prefix ("<")) return units;
+            }
+        }
+        return null;
+    }
+
+    private void parse_timing_attr_block (string timing_line,
+                                          out string voice, out string voice_display,
+                                          out string style, out string effect, out string lang,
+                                          out string units) {
+        voice = ""; voice_display = ""; style = ""; effect = ""; lang = "";
+        units = timing_line.strip ();
+        var ls = units;
+        if (ls.has_prefix ("{")) {
+            var tag_end = ls.index_of_char ('}');
+            if (tag_end >= 0) {
+                var inner = ls.substring (1, tag_end - 1);
+                parse_attr_block (inner, out voice, out voice_display, out style, out effect, out lang);
+                // "v1" is the default voice: normalize to "" (same rule as
+                // parse_lrc_plus_header_attrs) so all spellings unify.
+                if (voice == "v1") voice = "";
+                units = ls.substring (tag_end + 1).strip ();
+            }
+        }
+    }
+
+    private bool looks_like_v2_timing_line (string line) {
+        // Timing lines may carry a leading {…} voice/style block; the
+        // timestamp check runs on the units part after it.
+        var units = timing_units_part (line);
+        if (units == null) return false;
+        var ls = (!)units;
         var gt = ls.index_of_char ('>');
         if (gt < 0) return false;
         var inside = ls.substring (1, gt - 1).strip ();
         if (inside.length == 0) return false;
-        // v1 bulk contains '|' or word text with letters before colon; v2 inside is pure timestamp(s)
-        if (inside.contains ("|")) return false;
-        // quick check: first char must be digit for v2 timestamp
+        // v1 bulk contains '|' with word text; v2 inside starts with a digit
+        if (inside.contains ("|") && !inside[0].isdigit ()) return false;
         if (!inside[0].isdigit ()) return false;
-        // try single timestamp e.g. "00:10.00"
+        // single timestamp e.g. "00:10.00" (start only, end inferred)
         if (parse_timestamp (inside) >= 0) return true;
-        // try double timestamp e.g. "00:10.00:00:10.32"
-        // split by ":", expect 4 parts: mm, ss.xx, mm, ss.xx
-        var parts = inside.split (":");
-        if (parts.length == 4) {
-            var start_ts = "%s:%s".printf (parts[0], parts[1]);
-            var end_ts = "%s:%s".printf (parts[2], parts[3]);
-            if (parse_timestamp (start_ts) >= 0 && parse_timestamp (end_ts) >= 0) return true;
-        }
-        return false;
+        // pair: canonical "00:10.00,00:10.32", also '|' and legacy ':'
+        int64 s, e;
+        return parse_v2_timestamp_pair (inside, out s, out e);
     }
 
     public LyricWord[] parse_word_timings_v2 (string timing_line, int64 line_end_ms = -1) {
@@ -323,6 +670,10 @@ namespace G4 {
         bool[] has_explicit_end = {};
         var rest = timing_line.strip ();
         var pos = 0;
+        // Syllable rule: space separates words, adjacency means same word.
+        // The boundary before the current unit was decided by the previous
+        // unit's trailing space; a leading space after '>' also opens a word.
+        bool next_starts_word = true;
         while (pos < rest.length) {
             // skip WS
             while (pos < rest.length && rest[pos].isspace ()) pos++;
@@ -342,19 +693,17 @@ namespace G4 {
             int64 start_ms = -1;
             int64 end_ms = -1;
             bool explicit_end = false;
-            // inside may be "00:10.00" or "00:10.00:00:10.32"
-            if (inside.contains (":")) {
-                var parts = inside.split (":");
-                if (parts.length == 4) {
-                    var start_ts = "%s:%s".printf (parts[0], parts[1]);
-                    var end_ts = "%s:%s".printf (parts[2], parts[3]);
-                    start_ms = parse_timestamp (start_ts);
-                    end_ms = parse_timestamp (end_ts);
+            // inside may be "00:10.00" (start only) or a start,end pair:
+            // canonical "00:10.00,00:10.32", also "00:10.00|00:10.32" and
+            // legacy "00:10.00:00:10.32".
+            if (parse_timestamp (inside) >= 0) {
+                start_ms = parse_timestamp (inside);
+            } else {
+                int64 ps, pe;
+                if (parse_v2_timestamp_pair (inside, out ps, out pe)) {
+                    start_ms = ps;
+                    end_ms = pe;
                     explicit_end = end_ms >= 0;
-                } else if (parts.length == 2) {
-                    start_ms = parse_timestamp (inside);
-                } else {
-                    start_ms = parse_timestamp (inside);
                 }
             }
             pos = gt + 1;
@@ -371,22 +720,26 @@ namespace G4 {
                     while (pos < rest.length && rest[pos].isspace ()) pos++;
                 }
             }
-            var word_start = pos;
+            var word_begin = pos;
             var next_lt = rest.index_of_char ('<', pos);
-            string word_text;
+            string raw_slice;
             if (next_lt < 0) {
-                word_text = rest.substring (word_start).strip ();
+                raw_slice = rest.substring (word_begin);
                 pos = rest.length;
             } else {
-                word_text = rest.substring (word_start, next_lt - word_start).strip ();
+                raw_slice = rest.substring (word_begin, next_lt - word_begin);
                 pos = next_lt;
             }
-            word_text = decode_html_entities (word_text);
+            bool leading_space = raw_slice.length > 0 && raw_slice[0].isspace ();
+            bool trailing_space = raw_slice.length > 0 && raw_slice[raw_slice.length - 1].isspace ();
+            var word_text = decode_html_entities (raw_slice.strip ());
             if (word_text.length == 0 || start_ms < 0) continue;
+            bool this_word_start = next_starts_word || leading_space;
+            next_starts_word = trailing_space;
             double s = start_ms / 1000.0;
             // if no explicit end, use sentinel -1 to allow inference
             double e = explicit_end ? end_ms / 1000.0 : -1.0;
-            LyricWord w = { word_text, s, e, w_style, w_effect };
+            LyricWord w = { word_text, s, e, w_style, w_effect, this_word_start };
             words += w;
             has_explicit_end += explicit_end;
         }
@@ -413,8 +766,16 @@ namespace G4 {
     public LyricLine[] parse_lrc_plus (string lrc) {
         if (!lrc.contains ("<")) return {};
 
+        // File-level voice table: @[v2,"Elphaba","Idina Menzel",type=person]
+        HashTable<string,string> voice_displays;
+        HashTable<string,string> voice_credits;
+        HashTable<string,string> voice_types;
+        parse_voice_defs (lrc, out voice_displays, out voice_credits, out voice_types);
+
         LyricLine[] result = {};
         var raw_lines = strip_lrc_metadata (lrc).split ("\n");
+        // Song-section context from bare [Chorus] markers (TTML songPart).
+        string current_section = "";
         var i = 0;
         while (i < raw_lines.length) {
             var line = raw_lines[i].strip ();
@@ -433,15 +794,26 @@ namespace G4 {
             parse_lrc_plus_header_attrs (rest, out voice_role, out voice_display, out style, out effect, out lang, out text_part);
 
             var ms = parse_timestamp (timestamp);
-            if (ms < 0) continue;
+            if (ms < 0) {
+                // Bare [Chorus]-style section marker: sets context for the
+                // lines that follow, never becomes a lyric line itself.
+                string? sect = parse_section_marker (line);
+                if (sect != null) current_section = (!)sect;
+                continue;
+            }
 
             var decoded_rest = decode_html_entities (text_part);
 
             LyricWord[] words = {};
             bool has_timing = false;
-            if (i < raw_lines.length && raw_lines[i].strip ().has_prefix ("<")) {
+            string? units_next = (i < raw_lines.length) ? timing_units_part (raw_lines[i]) : null;
+            if (units_next != null) {
                 var timing_line = raw_lines[i].strip ();
-                if (looks_like_v2_timing_line (timing_line)) {
+                // Voice/style tags live on the timing line (headers stay
+                // bare for legacy players). Split the leading {…} block.
+                string t_voice, t_display, t_style, t_effect, t_lang, units;
+                parse_timing_attr_block (timing_line, out t_voice, out t_display, out t_style, out t_effect, out t_lang, out units);
+                if (looks_like_v2_timing_line (units)) {
                     // infer line_end for last word without explicit end: look ahead to next header timestamp
                     int64 line_end_ms = -1;
                     for (var j = i + 1; j < raw_lines.length; j++) {
@@ -456,14 +828,20 @@ namespace G4 {
                     if (line_end_ms < 0 && timing_line.length > 0) {
                         // fallback: last word start + 3s will be handled inside parse_word_timings_v2 via -1
                     }
-                    words = parse_word_timings_v2 (timing_line, line_end_ms);
+                    words = parse_word_timings_v2 (units, line_end_ms);
                 } else {
-                    words = parse_word_timings (timing_line);
+                    words = parse_word_timings (units);
                 }
                 has_timing = words.length > 0;
-                // Also treat as timing line consumed even if empty parse (to skip it)
-                if (timing_line.has_prefix ("<"))
-                    i++;
+                // Merge: timing-line block wins per field; the header block
+                // is back-compat fallback for files written before the move.
+                if (t_voice.length > 0) voice_role = t_voice;
+                if (t_display.length > 0) voice_display = t_display;
+                if (t_style.length > 0) style = t_style;
+                if (t_effect.length > 0) effect = t_effect;
+                if (t_lang.length > 0) lang = t_lang;
+                // Consume the timing line even if its units parsed empty.
+                i++;
             }
             // Strict isolation: no {…} without timing line
             if (!has_timing) {
@@ -476,11 +854,36 @@ namespace G4 {
                 // For strict legacy safety we keep stripped text (attrs hidden) but clear attrs —
                 // plain LRC readers would have seen attrs as text, so lint should warn producer.
             }
+            // Resolve pretty names from the file-level voice table when the
+            // short {v2} tag carries no inline display. Inline display
+            // ({voice:v2|display:X}, back-compat read) wins if present.
+            // Untagged timed lines sing the default voice, so they inherit
+            // the v1 table entry (this is what makes @[v1:...] round-trip
+            // through tagless headers). Untimed lines carry no voice.
+            string voice_credit = "";
+            string voice_type = "";
+            if (voice_role.length > 0) {
+                if (voice_display.length == 0) {
+                    string? d = voice_displays.lookup (voice_role);
+                    if (d != null) voice_display = (!)d;
+                }
+                string? c = voice_credits.lookup (voice_role);
+                if (c != null) voice_credit = (!)c;
+                string? t = voice_types.lookup (voice_role);
+                if (t != null) voice_type = (!)t;
+            } else if (has_timing) {
+                string? d = voice_displays.lookup ("v1");
+                if (d != null) voice_display = (!)d;
+                string? c = voice_credits.lookup ("v1");
+                if (c != null) voice_credit = (!)c;
+                string? t = voice_types.lookup ("v1");
+                if (t != null) voice_type = (!)t;
+            }
 
-            LyricLine l = { ms, decoded_rest, words, voice_role, voice_display, style, effect, lang };
+            LyricLine l = { ms, decoded_rest, words, voice_role, voice_display, style, effect, lang, voice_credit, voice_type, current_section };
             result += l;
         }
-        return deduplicate_lines (result);
+        return split_bracket_backgrounds (deduplicate_lines (result));
     }
 
     private LyricLine[] deduplicate_lines (LyricLine[] input) {
@@ -519,6 +922,176 @@ namespace G4 {
         return out;
     }
 
+    private LyricLine[] split_bracket_backgrounds (LyricLine[] input) {
+        // Auto-detect bracketed text e.g. "Hello (All we see is light) world"
+        // and split into independent voice lines: main + bg (voice=bg).
+        LyricLine[] out = {};
+        foreach (var l in input) {
+            var text = l.text;
+            if (!text.contains ("(") || !text.contains (")")) {
+                out += l;
+                continue;
+            }
+            int[] opens = {};
+            int[] closes = {};
+            string[] bg_parts = {};
+            int search_from = 0;
+            while (true) {
+                int o = text.index_of ("(", search_from);
+                if (o < 0) break;
+                int c = text.index_of (")", o + 1);
+                if (c < 0) break;
+                opens += o;
+                closes += c;
+                var inner = text.substring (o + 1, c - o - 1).strip ();
+                if (inner.length > 0) bg_parts += inner;
+                search_from = c + 1;
+            }
+            if (bg_parts.length == 0) {
+                out += l;
+                continue;
+            }
+            // If already bg, just strip parentheses
+            if (l.voice_role == "bg") {
+                string cleaned = text.replace ("(", "").replace (")", "").strip ();
+                while (cleaned.contains ("  ")) cleaned = cleaned.replace ("  ", " ");
+                LyricLine nl = l;
+                nl.text = cleaned;
+                for (var wi = 0; wi < nl.words.length; wi++) {
+                    nl.words[wi].text = nl.words[wi].text.replace ("(", "").replace (")", "").strip ();
+                }
+                LyricWord[] filtered = {};
+                foreach (var w in nl.words) if (w.text.length > 0) filtered += w;
+                nl.words = filtered;
+                out += nl;
+                continue;
+            }
+            string bg_text = "";
+            for (var k = 0; k < bg_parts.length; k++) {
+                if (k > 0) bg_text += " ";
+                bg_text += bg_parts[k];
+            }
+            var main_sb = new StringBuilder ();
+            int pos = 0;
+            for (var k = 0; k < opens.length; k++) {
+                main_sb.append (text.substring (pos, opens[k] - pos));
+                pos = closes[k] + 1;
+            }
+            main_sb.append (text.substring (pos));
+            string main_text = main_sb.str.strip ();
+            while (main_text.contains ("  ")) main_text = main_text.replace ("  ", " ");
+            if (main_text.length == 0) {
+                LyricLine bg = l;
+                bg.text = bg_text;
+                bg.voice_role = "bg";
+                bg.voice_display = "";
+                for (var wi = 0; wi < bg.words.length; wi++) {
+                    bg.words[wi].text = bg.words[wi].text.replace ("(", "").replace (")", "").strip ();
+                }
+                LyricWord[] filtered = {};
+                foreach (var w in bg.words) if (w.text.length > 0) filtered += w;
+                bg.words = filtered;
+                out += bg;
+                continue;
+            }
+            if (l.words.length == 0) {
+                LyricLine main = l;
+                main.text = main_text;
+                out += main;
+                LyricLine bg = { l.time_ms, bg_text, {}, "bg", "", "", "", "", "", "", l.section };
+                out += bg;
+                continue;
+            }
+            // Partition words by position in original text
+            LyricWord[] main_words = {};
+            LyricWord[] bg_words = {};
+            int text_pos = 0;
+            foreach (var w in l.words) {
+                string clean = w.text.replace ("(", "").replace (")", "").strip ();
+                if (clean.length == 0) continue;
+                int found = -1;
+                // naive forward search for clean starting at text_pos
+                for (int s = text_pos; s + clean.length <= text.length; s++) {
+                    if (text.substring (s, clean.length) == clean) {
+                        found = s;
+                        break;
+                    }
+                }
+                bool inside = false;
+                if (found >= 0) {
+                    for (var k = 0; k < opens.length; k++) {
+                        if (found > opens[k] && found < closes[k]) { inside = true; break; }
+                        if (found >= opens[k] && found + clean.length <= closes[k] + 1) { inside = true; break; }
+                    }
+                    text_pos = found + clean.length;
+                } else {
+                    if (bg_text.contains (clean)) inside = true;
+                    else if (main_text.contains (clean)) inside = false;
+                    else inside = false;
+                }
+                LyricWord nw = w;
+                nw.text = clean;
+                if (inside) bg_words += nw;
+                else main_words += nw;
+            }
+            if (main_words.length == 0 || bg_words.length == 0) {
+                main_words = {};
+                bg_words = {};
+                foreach (var w in l.words) {
+                    string clean = w.text.replace ("(", "").replace (")", "").strip ();
+                    if (clean.length == 0) continue;
+                    bool in_bg = bg_text.contains (clean);
+                    bool in_main = main_text.contains (clean);
+                    LyricWord nw = w; nw.text = clean;
+                    if (in_bg && !in_main) bg_words += nw;
+                    else if (in_main && !in_bg) main_words += nw;
+                    else if (in_bg && in_main) {
+                        // ambiguous: use first occurrence heuristic
+                        int idx_bg = bg_text.index_of (clean);
+                        int idx_main = main_text.index_of (clean);
+                        if (idx_bg >= 0 && idx_main < 0) bg_words += nw;
+                        else main_words += nw;
+                    } else {
+                        main_words += nw;
+                    }
+                }
+            }
+            if (main_words.length == 0 || bg_words.length == 0) {
+                main_words = {};
+                bg_words = {};
+                int half = l.words.length / 2;
+                for (int wi = 0; wi < l.words.length; wi++) {
+                    string clean = l.words[wi].text.replace ("(", "").replace (")", "").strip ();
+                    if (clean.length == 0) continue;
+                    LyricWord nw = l.words[wi];
+                    nw.text = clean;
+                    if (wi < half) main_words += nw;
+                    else bg_words += nw;
+                }
+                if (main_words.length == 0 && bg_words.length > 0) {
+                    main_words += bg_words[0];
+                    LyricWord[] tmp = {};
+                    for (int i = 1; i < bg_words.length; i++) tmp += bg_words[i];
+                    bg_words = tmp;
+                }
+            }
+            LyricWord[] f_main = {};
+            foreach (var w in main_words) if (w.text.length > 0) f_main += w;
+            LyricWord[] f_bg = {};
+            foreach (var w in bg_words) if (w.text.length > 0) f_bg += w;
+            // Slice heads always start a new display word even if the unit
+            // was a syllable continuation in the original line.
+            if (f_main.length > 0) f_main[0].word_start = true;
+            if (f_bg.length > 0) f_bg[0].word_start = true;
+            LyricLine main_line = { l.time_ms, main_text, f_main, l.voice_role, l.voice_display, l.style, l.effect, l.lang, l.voice_credit, l.voice_type, l.section };
+            LyricLine bg_line = { l.time_ms, bg_text, f_bg, "bg", "", "", "", "", "", "", l.section };
+            if (main_line.text.length > 0) out += main_line;
+            if (bg_line.text.length > 0) out += bg_line;
+            if (main_line.text.length == 0 && bg_line.text.length == 0) out += l;
+        }
+        return out;
+    }
+
     public LyricLine[] parse_extended_lrc (string lrc) {
         if (!lrc.contains ("<")) return {};
 
@@ -553,6 +1126,8 @@ namespace G4 {
                 var prefix = rest.substring (0, first_tag).strip ();
                 if (prefix.has_suffix (":")) {
                     voice_role = prefix.substring (0, prefix.length - 1);
+                    // "v1" is the default voice (see parse_lrc_plus_header_attrs)
+                    if (voice_role == "v1") voice_role = "";
                     rest = rest.substring (first_tag);
                 } else {
                     rest = rest.substring (first_tag);
@@ -560,8 +1135,12 @@ namespace G4 {
             }
 
             LyricWord[] words = {};
-            var text_sb = new StringBuilder ();
             var pos = 0;
+            // Syllable rule (matches TTML/ELRC source encoding): a space
+            // between units separates words (<…>An<…>y = one word "Any"),
+            // so the boundary before each unit comes from the previous
+            // segment's trailing space, or leading space after '>'.
+            bool next_starts_word = true;
 
             while (pos < rest.length) {
                 if (rest[pos] == '<') {
@@ -571,17 +1150,22 @@ namespace G4 {
                     var word_start_ms = parse_timestamp (ts_str);
                     pos = end + 1;
 
-                    var word_start = pos;
+                    var seg_begin = pos;
                     while (pos < rest.length && rest[pos] != '<')
                         pos++;
-                    var word_text = rest.substring (word_start, pos - word_start);
-                    word_text = decode_html_entities (word_text).strip ();
+                    var raw_seg = rest.substring (seg_begin, pos - seg_begin);
+                    bool leading_space = raw_seg.length > 0 && raw_seg[0].isspace ();
+                    bool trailing_space = raw_seg.length > 0 && raw_seg[raw_seg.length - 1].isspace ();
+                    var word_text = decode_html_entities (raw_seg.strip ());
 
                     if (word_text.length > 0 && word_start_ms >= 0) {
-                        LyricWord w = { word_text, word_start_ms / 1000.0, 0.0, "", "" };
+                        bool this_word_start = next_starts_word || leading_space;
+                        next_starts_word = trailing_space;
+                        LyricWord w = { word_text, word_start_ms / 1000.0, 0.0, "", "", this_word_start };
                         words += w;
-                        text_sb.append (word_text);
-                        text_sb.append_c (' ');
+                    } else if (word_text.length == 0 && word_start_ms >= 0) {
+                        // Bare end-time tag (e.g. trailing <00:03.394>):
+                        // no word, leaves the pending boundary untouched.
                     }
                 } else {
                     pos++;
@@ -597,15 +1181,24 @@ namespace G4 {
             if (words.length > 0)
                 words[words.length - 1].end_sec = line_end_sec;
 
-            LyricLine l = { line_ms, text_sb.str.strip (), words, voice_role, "", "", "", "" };
+            // Display text joins syllable continuations without spaces so
+            // "An<…>y<…>m<…>ore" renders "Anymore", not "An y m ore".
+            var line_text = words.length > 0 ? join_lyric_words (words) : "";
+            LyricLine l = { line_ms, line_text, words, voice_role, "", "", "", "", "", "", "" };
             result += l;
         }
-        return deduplicate_lines (result);
+        return split_bracket_backgrounds (deduplicate_lines (result));
     }
 
     public LyricLine[] parse_lrc (string lrc) {
         LyricLine[] result = {};
+        HashTable<string,string> voice_displays;
+        HashTable<string,string> voice_credits;
+        HashTable<string,string> voice_types;
+        parse_voice_defs (lrc, out voice_displays, out voice_credits, out voice_types);
         var raw_lines = strip_lrc_metadata (lrc).split ("\n");
+        // Song-section context from bare [Chorus] markers (see parse_lrc_plus).
+        string current_section = "";
         var i = 0;
         while (i < raw_lines.length) {
             var line = raw_lines[i].strip ();
@@ -624,16 +1217,29 @@ namespace G4 {
                 var tag_end = rest.index_of_char ('}');
                 if (tag_end >= 0) {
                     voice_role = rest.substring (1, tag_end - 1);
+                    // "v1" is the default voice (see parse_lrc_plus_header_attrs)
+                    if (voice_role == "v1" || voice_role == "voice:v1") voice_role = "";
                     rest = rest.substring (tag_end + 1).strip ();
                 }
             }
 
             var ms = parse_timestamp (timestamp);
-            if (ms < 0) continue;
+            if (ms < 0) {
+                // Bare [Chorus]-style section marker: sets context for the
+                // lines that follow, never becomes a lyric line itself.
+                string? sect = parse_section_marker (line);
+                if (sect != null) current_section = (!)sect;
+                continue;
+            }
 
             LyricWord[] words = {};
-            if (i < raw_lines.length && raw_lines[i].strip ().has_prefix ("<")) {
-                words = parse_word_timings (raw_lines[i].strip ());
+            string? units_next = (i < raw_lines.length) ? timing_units_part (raw_lines[i]) : null;
+            if (units_next != null) {
+                // Timing-line {…} block carries the voice (headers stay bare).
+                string t_voice, t_display, t_style, t_effect, t_lang, units;
+                parse_timing_attr_block (raw_lines[i].strip (), out t_voice, out t_display, out t_style, out t_effect, out t_lang, out units);
+                if (t_voice.length > 0) voice_role = t_voice;
+                words = parse_word_timings (units);
                 // strict isolation: if no words parsed, drop legacy voice on plain LRC line
                 if (words.length == 0)
                     voice_role = "";
@@ -644,34 +1250,50 @@ namespace G4 {
             }
 
             var decoded_rest = decode_html_entities (rest);
-            LyricLine l = { ms, decoded_rest, words, voice_role, "", "", "", "" };
+            // Resolve the agent type from the voice table so the badge can
+            // fall back to it (nameless v1000 etc.). Display stays unset on
+            // this lenient path; untagged timed lines inherit the v1 type.
+            string voice_type = "";
+            if (voice_role.length > 0) {
+                string? t = voice_types.lookup (voice_role);
+                if (t != null) voice_type = (!)t;
+            } else if (words.length > 0) {
+                string? t = voice_types.lookup ("v1");
+                if (t != null) voice_type = (!)t;
+            }
+            LyricLine l = { ms, decoded_rest, words, voice_role, "", "", "", "", "", voice_type, current_section };
             result += l;
         }
-        return deduplicate_lines (result);
+        return split_bracket_backgrounds (deduplicate_lines (result));
     }
 
     public LyricLine[] parse_plain (string text) {
         LyricLine[] result = {};
         foreach (var line in text.split ("\n")) {
             var trimmed = line.strip ();
+            // Voice-table lines are file-level metadata, never lyric text
+            // (section headers like [Chorus] are kept as plain lines).
+            if (trimmed.has_prefix ("[@") || trimmed.has_prefix ("@[")) continue;
             if (trimmed.length > 0 && trimmed[0] == '[' && parse_timestamp (
                     trimmed.substring (1, trimmed.index_of_char (']') > 0
                         ? trimmed.index_of_char (']') - 1 : 0)) >= 0)
                 continue;
             LyricWord[] empty_words = {};
-            LyricLine l = { -1, trimmed, empty_words, "", "", "", "", "" };
+            LyricLine l = { -1, trimmed, empty_words, "", "", "", "", "", "", "", "" };
             result += l;
         }
         var start = 0;
         var end = result.length - 1;
         while (start <= end && result[start].text.length == 0) start++;
         while (end >= start && result[end].text.length == 0) end--;
-        return result[start:end + 1];
+        var sliced = result[start:end + 1];
+        return split_bracket_backgrounds (sliced);
     }
 
     // ── TTML agent pretty-name extraction ───────────────────────────────
-    private HashTable<string,string> extract_ttml_agents (Xml.Node* root) {
+    private HashTable<string,string> extract_ttml_agents (Xml.Node* root, out HashTable<string,string> types) {
         var agents = new HashTable<string,string> (str_hash, str_equal);
+        types = new HashTable<string,string> (str_hash, str_equal);
         // find head
         unowned Xml.Node* head = null;
         for (var c = root->children; c != null; c = c->next) {
@@ -692,6 +1314,12 @@ namespace G4 {
                     if (id == null) id = n->get_prop ("id");
                     if (id != null && ((!)id).length > 0) {
                         string display = "";
+                        // Agent kind (person|group): recorded even when the
+                        // agent has no name, so nameless v1000/v3 still get
+                        // a nametable entry (@[v1000,type=group]).
+                        string? atype = n->get_prop ("type");
+                        if (atype != null && ((!)atype).strip ().length > 0)
+                            types.set ((!)id, ((!)atype).strip ().down ());
                         // look for child <name> or <ttm:name> or attribute displayName/name
                         string? aname = n->get_prop ("displayName");
                         if (aname == null) aname = n->get_prop ("name");
@@ -735,6 +1363,16 @@ namespace G4 {
         return "";
     }
 
+    private string agent_type_for (HashTable<string,string> types, string voice_role) {
+        if (voice_role.length == 0) return "";
+        if (voice_role == "bg") return "";
+        string? v = types.lookup (voice_role);
+        if (v != null) return (!)v;
+        v = types.lookup (voice_role.down ());
+        if (v != null) return (!)v;
+        return "";
+    }
+
     // ── TTML parsers ──────────────────────────────────────────────────
 
     public LyricLine[] parse_ttml (string ttml) {
@@ -773,30 +1411,33 @@ namespace G4 {
             }
         }
 
-        var agents = extract_ttml_agents (root);
+        HashTable<string,string> agent_types;
+        var agents = extract_ttml_agents (root, out agent_types);
         LyricLine[] ttml_result;
         if (has_word_timing) {
-            ttml_result = parse_ttml_word_synced (body, agents);
+            ttml_result = parse_ttml_word_synced (body, agents, agent_types);
         } else if (has_line_timing) {
-            ttml_result = parse_ttml_line_synced (body, agents);
+            ttml_result = parse_ttml_line_synced (body, agents, agent_types);
         } else {
             ttml_result = parse_ttml_unsynced (body);
         }
         delete doc;
-        return ttml_result;
+        return split_bracket_backgrounds (ttml_result);
     }
 
     private LyricLine[] parse_ttml_unsynced (Xml.Node* body) {
         LyricLine[] result = {};
         for (var div = body->children; div != null; div = div->next) {
             if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
+            string div_section = div->get_prop ("songPart") ?? "";
+            div_section = div_section.strip ();
             for (var p = div->children; p != null; p = p->next) {
                 if (p->type != Xml.ElementType.ELEMENT_NODE) continue;
                 if (p->name != "p") continue;
                 var text = p->get_content ();
                 if (text.strip ().length > 0) {
                     LyricWord[] empty_words = {};
-                    LyricLine l = { -1, text.strip (), empty_words, "", "", "", "" };
+                    LyricLine l = { -1, text.strip (), empty_words, "", "", "", "", "", "", "", div_section };
                     result += l;
                 }
             }
@@ -804,10 +1445,12 @@ namespace G4 {
         return result;
     }
 
-    private LyricLine[] parse_ttml_line_synced (Xml.Node* body, HashTable<string,string>? agents = null) {
+    private LyricLine[] parse_ttml_line_synced (Xml.Node* body, HashTable<string,string>? agents = null, HashTable<string,string>? agent_types = null) {
         LyricLine[] result = {};
         for (var div = body->children; div != null; div = div->next) {
             if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
+            string div_section = div->get_prop ("songPart") ?? "";
+            div_section = div_section.strip ();
             for (var p = div->children; p != null; p = p->next) {
                 if (p->type != Xml.ElementType.ELEMENT_NODE) continue;
                 if (p->name != "p") continue;
@@ -822,21 +1465,35 @@ namespace G4 {
                 if (p_agent != null && (!)p_agent != "v1")
                     voice_role = (!)p_agent;
                 string voice_display = "";
+                string voice_type = "";
                 if (agents != null) {
                     // try raw agent id first (preserves v1 pretty name), fallback to role
                     string raw = p_agent ?? "";
                     voice_display = agent_display_for ((!)agents, raw);
                     if (voice_display.length == 0) voice_display = agent_display_for ((!)agents, voice_role);
                 }
+                if (agent_types != null) {
+                    string raw = p_agent ?? "";
+                    voice_type = agent_type_for ((!)agent_types, raw);
+                    if (voice_type.length == 0) voice_type = agent_type_for ((!)agent_types, voice_role);
+                }
 
                 var p_content = p->get_content ();
 
                 LyricWord[] main_words = {};
                 LyricWord[] bg_words = {};
-                var line_text_sb = new StringBuilder ();
+                // Syllable rule: TTML separates words with a space text node
+                // between spans and glues syllables by adjacency
+                // (<span>Def</span><span>y</span> = "Defy"). Whitespace text
+                // nodes are significant here, so they are tracked instead of
+                // skipped.
+                bool pending_space = false;
 
                 for (var span = p->children; span != null; span = span->next) {
-                    if (span->type != Xml.ElementType.ELEMENT_NODE) continue;
+                    if (span->type != Xml.ElementType.ELEMENT_NODE) {
+                        if (ttml_node_is_space (span)) pending_space = true;
+                        continue;
+                    }
                     if (span->name != "span") continue;
 
                     var role = span->get_prop ("role");
@@ -844,55 +1501,55 @@ namespace G4 {
                     var w_text = span->get_content ();
 
                     if (is_this_bg) {
+                        bool bg_pending_space = false;
                         for (var ws = span->children; ws != null; ws = ws->next) {
-                            if (ws->type != Xml.ElementType.ELEMENT_NODE) continue;
+                            if (ws->type != Xml.ElementType.ELEMENT_NODE) {
+                                if (ttml_node_is_space (ws)) bg_pending_space = true;
+                                continue;
+                            }
                             var w_begin = ws->get_prop ("begin");
                             var w_end = ws->get_prop ("end");
                             var w_content = ws->get_content ();
                             if (w_begin != null && w_end != null && w_content.length > 0) {
+                                bool starts = bg_words.length == 0 || bg_pending_space;
+                                bg_pending_space = false;
                                 LyricWord w = {
                                     w_content,
                                     ttml_time_to_ms ((!)w_begin) / 1000.0,
                                     ttml_time_to_ms ((!)w_end) / 1000.0,
-                                    "", ""
+                                    "", "", starts
                                 };
                                 bg_words += w;
                             }
                         }
+                        pending_space = false;
                     } else {
                         var w_begin = span->get_prop ("begin");
                         var w_end = span->get_prop ("end");
                         if (w_begin != null && w_end != null && w_text.length > 0) {
+                            bool starts = main_words.length == 0 || pending_space;
+                            pending_space = false;
                             LyricWord w = {
                                 w_text,
                                 ttml_time_to_ms ((!)w_begin) / 1000.0,
                                 ttml_time_to_ms ((!)w_end) / 1000.0,
-                                "", ""
+                                "", "", starts
                             };
                             main_words += w;
-                            line_text_sb.append (w_text);
-                            line_text_sb.append_c (' ');
                         }
                     }
                 }
 
-                if (line_text_sb.len == 0 && p_content.length > 0) {
-                    line_text_sb.append (p_content);
-                }
-
-                var line_text = line_text_sb.str.strip ();
+                // Display text joins syllable continuations without spaces so
+                // "Def"+"y"+"ing" renders "Defying", not "Def y ing".
+                var line_text = main_words.length > 0 ? join_lyric_words (main_words) : p_content.strip ();
                 if (line_text.length == 0) continue;
 
-                LyricLine main_line = { ms, line_text, main_words, voice_role, voice_display, "", "", "" };
+                LyricLine main_line = { ms, line_text, main_words, voice_role, voice_display, "", "", "", "", voice_type, div_section };
                 result += main_line;
 
                 if (bg_words.length > 0) {
-                    var bg_text_sb = new StringBuilder ();
-                    foreach (var bw in bg_words) {
-                        bg_text_sb.append (bw.text);
-                        bg_text_sb.append_c (' ');
-                    }
-                    LyricLine bg_line = { ms, bg_text_sb.str.strip (), bg_words, "bg", "", "", "", "" };
+                    LyricLine bg_line = { ms, join_lyric_words (bg_words), bg_words, "bg", "", "", "", "", "", "", div_section };
                     result += bg_line;
                 }
             }
@@ -900,10 +1557,12 @@ namespace G4 {
         return result;
     }
 
-    private LyricLine[] parse_ttml_word_synced (Xml.Node* body, HashTable<string,string>? agents = null) {
+    private LyricLine[] parse_ttml_word_synced (Xml.Node* body, HashTable<string,string>? agents = null, HashTable<string,string>? agent_types = null) {
         LyricLine[] result = {};
         for (var div = body->children; div != null; div = div->next) {
             if (div->type != Xml.ElementType.ELEMENT_NODE) continue;
+            string div_section = div->get_prop ("songPart") ?? "";
+            div_section = div_section.strip ();
             for (var p = div->children; p != null; p = p->next) {
                 if (p->type != Xml.ElementType.ELEMENT_NODE) continue;
                 if (p->name != "p") continue;
@@ -925,11 +1584,15 @@ namespace G4 {
 
                 LyricWord[] main_words = {};
                 LyricWord[] bg_words = {};
-                var main_text_sb = new StringBuilder ();
-                var bg_text_sb = new StringBuilder ();
+                // Same syllable rule as parse_ttml_line_synced: space text
+                // nodes between spans separate words, adjacency glues.
+                bool pending_space = false;
 
                 for (var span = p->children; span != null; span = span->next) {
-                    if (span->type != Xml.ElementType.ELEMENT_NODE) continue;
+                    if (span->type != Xml.ElementType.ELEMENT_NODE) {
+                        if (ttml_node_is_space (span)) pending_space = true;
+                        continue;
+                    }
                     if (span->name != "span") continue;
 
                     var role = span->get_prop ("role");
@@ -944,18 +1607,23 @@ namespace G4 {
                     }
 
                     if (is_bg) {
+                        bool bg_pending_space = false;
                         for (var ws = span->children; ws != null; ws = ws->next) {
-                            if (ws->type != Xml.ElementType.ELEMENT_NODE) continue;
+                            if (ws->type != Xml.ElementType.ELEMENT_NODE) {
+                                if (ttml_node_is_space (ws)) bg_pending_space = true;
+                                continue;
+                            }
                             var w_begin = ws->get_prop ("begin");
                             var w_end = ws->get_prop ("end");
                             var w_content = ws->get_content ();
                             if (w_begin != null && w_end != null && w_content.length > 0) {
-                                LyricWord w = { w_content, ttml_time_to_ms ((!)w_begin) / 1000.0, ttml_time_to_ms ((!)w_end) / 1000.0, "", "" };
+                                bool starts = bg_words.length == 0 || bg_pending_space;
+                                bg_pending_space = false;
+                                LyricWord w = { w_content, ttml_time_to_ms ((!)w_begin) / 1000.0, ttml_time_to_ms ((!)w_end) / 1000.0, "", "", starts };
                                 bg_words += w;
-                                bg_text_sb.append (w_content);
-                                bg_text_sb.append_c (' ');
                             }
                         }
+                        pending_space = false;
                     } else {
                         var w_begin_str = span->get_prop ("begin");
                         var w_end_str = span->get_prop ("end");
@@ -964,10 +1632,10 @@ namespace G4 {
                             var w_begin = ttml_time_to_ms ((!)w_begin_str);
                             var w_end = ttml_time_to_ms ((!)w_end_str);
                             if (w_begin >= 0 && w_end >= 0) {
-                                LyricWord w = { w_text, w_begin / 1000.0, w_end / 1000.0, "", "" };
+                                bool starts = main_words.length == 0 || pending_space;
+                                pending_space = false;
+                                LyricWord w = { w_text, w_begin / 1000.0, w_end / 1000.0, "", "", starts };
                                 main_words += w;
-                                main_text_sb.append (w_text);
-                                main_text_sb.append_c (' ');
                             }
                         }
                     }
@@ -979,13 +1647,19 @@ namespace G4 {
                     if (voice_display.length == 0 && last_agent.length > 0)
                         voice_display = agent_display_for ((!)agents, last_agent);
                 }
-                if (main_words.length > 0 || main_text_sb.str.strip ().length > 0) {
-                    LyricLine l = { line_ms, main_text_sb.str.strip (), main_words, voice_role, voice_display, "", "", "" };
+                string voice_type = "";
+                if (agent_types != null) {
+                    voice_type = agent_type_for ((!)agent_types, voice_role);
+                    if (voice_type.length == 0 && last_agent.length > 0)
+                        voice_type = agent_type_for ((!)agent_types, last_agent);
+                }
+                if (main_words.length > 0) {
+                    LyricLine l = { line_ms, join_lyric_words (main_words), main_words, voice_role, voice_display, "", "", "", "", voice_type, div_section };
                     result += l;
                 }
 
                 if (bg_words.length > 0) {
-                    LyricLine bg_line = { line_ms, bg_text_sb.str.strip (), bg_words, "bg", "", "", "", "" };
+                    LyricLine bg_line = { line_ms, join_lyric_words (bg_words), bg_words, "bg", "", "", "", "", "", "", div_section };
                     result += bg_line;
                 }
             }
@@ -994,6 +1668,20 @@ namespace G4 {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────
+
+    private int64 round_sec_to_ms (double sec) {
+        // Round (not truncate) to nearest ms: 128.45 is not exactly
+        // representable as a double, so (int64)(128.44999…*1000) would lose
+        // 1 ms and drift by 1 cs on every serialize→parse cycle. All lyric
+        // times are non-negative, so +0.5 truncation-rounding is exact here
+        // and avoids pulling in libm.
+        return (int64) (sec * 1000 + 0.5);
+    }
+
+    private bool ttml_node_is_space (Xml.Node* node) {
+        var t = node->get_content ();
+        return t.contains (" ") || t.contains ("\t") || t.contains ("\n") || t.contains ("\r");
+    }
 
     public LyricWord[] parse_word_timings (string timing_line) {
         LyricWord[] words = {};
@@ -1006,7 +1694,8 @@ namespace G4 {
             var segments = part.split (":");
             if (segments.length >= 3) {
                 var text = decode_html_entities (segments[0]);
-                LyricWord w = { text, double.parse (segments[1]), double.parse (segments[2]), "", "" };
+                // v1 bulk has no syllable encoding: each entry is a word.
+                LyricWord w = { text, double.parse (segments[1]), double.parse (segments[2]), "", "", true };
                 words += w;
             }
         }
@@ -1046,13 +1735,13 @@ namespace G4 {
             var h = int.parse (parts[0]);
             var m = int.parse (parts[1]);
             var s = double.parse (parts[2]);
-            return (int64) ((h * 3600 + m * 60 + s) * 1000);
+            return round_sec_to_ms (h * 3600 + m * 60 + s);
         } else if (parts.length == 2) {
             var m = int.parse (parts[0]);
             var s = double.parse (parts[1]);
-            return (int64) ((m * 60 + s) * 1000);
+            return round_sec_to_ms (m * 60 + s);
         } else {
-            return (int64) (double.parse (t) * 1000);
+            return round_sec_to_ms (double.parse (t));
         }
     }
 
@@ -1068,30 +1757,42 @@ namespace G4 {
     }
 
     public string format_sec_as_timestamp (double sec) {
-        int64 ms = (int64) (sec * 1000);
+        // round to nearest ms (see round_sec_to_ms): truncating the inexact
+        // double 128.45 would give 128449 and drift on serialize→parse
+        int64 ms = round_sec_to_ms (sec);
         return format_ms_as_timestamp (ms);
     }
 
-    private string build_header_attr_block (LyricLine l) {
-        // Strict isolation already enforced on parse; serialize only if words exist
+    public string encode_html_entities (string s) {
+        return s.replace ("&", "&amp;")
+                .replace ("<", "&lt;")
+                .replace (">", "&gt;");
+    }
+
+    private string effective_voice_id (LyricLine l) {
+        // The default voice ("", TTML v1 normalized) is written with the
+        // explicit {v1} alias when the line carries a display name,
+        // performer credit or agent type that belongs in the @[...] voice
+        // table; otherwise it stays untagged (cleanest for legacy players).
+        if (l.voice_role.length > 0) return l.voice_role;
+        if (l.words.length > 0 && (l.voice_display.length > 0 || l.voice_credit.length > 0 || l.voice_type.length > 0))
+            return "v1";
+        return "";
+    }
+
+    private string build_timing_attr_block (LyricLine l) {
+        // Line-level attrs are serialized ONLY on the timing line, never on
+        // the header, so legacy players (which display [mm:ss.xx]Text and
+        // skip '<'/'{' lines) always see clean text. Voice uses the short
+        // {v1} alias only — pretty names live once per file in @[...] voice
+        // table lines, never inline, so no {voice:...|display:...} metadata
+        // leaks anywhere legacy players look.
+        // (Inline long form is still accepted on read for back-compat.)
         if (l.words.length == 0) return "";
         var parts = new StringBuilder ();
-        if (l.voice_role.length > 0) {
-            parts.append ("voice:%s".printf (l.voice_role));
-        }
-        if (l.voice_display.length > 0) {
-            if (parts.len > 0) parts.append_c ('|');
-            // escape quotes if display contains '"' or '|' or '}'
-            var disp = l.voice_display;
-            // if display contains '|' '}' ',' or space, quote it
-            bool needs_quotes = disp.contains ("|") || disp.contains ("}") || disp.contains (",") || disp.contains ("\"") || disp.contains (" ");
-            if (needs_quotes) {
-                // escape internal quotes
-                disp = disp.replace ("\"", "&quot;");
-                parts.append ("display:\"%s\"".printf (disp));
-            } else {
-                parts.append ("display:%s".printf (disp));
-            }
+        var vid = effective_voice_id (l);
+        if (vid.length > 0) {
+            parts.append (vid);
         }
         if (l.style.length > 0) {
             if (parts.len > 0) parts.append_c ('|');
@@ -1109,24 +1810,85 @@ namespace G4 {
         return "{%s}".printf (parts.str);
     }
 
-    public string serialize_to_lrc_plus (LyricLine[] lines) {
+    private string serialize_voice_table (LyricLine[] lines) {
+        // Ordered unique voice ids (first appearance) that carry a display
+        // name, performer credit or agent type. One separator (','):
+        // @[v2,"Elphaba","Idina Menzel",type=person] or @[v1000,type=group].
+        // '@' leads so legacy '['-anchored players skip the line outright.
+        // Ids with nothing known need no declaration.
+        string[] seen = {};
         var sb = new StringBuilder ();
         foreach (var l in lines) {
             if (l.time_ms < 0) continue;
+            var vid = effective_voice_id (l);
+            if (vid.length == 0) continue;
+            bool dup = false;
+            foreach (var s in seen) if (s == vid) { dup = true; break; }
+            if (dup) continue;
+            if (l.voice_display.length == 0 && l.voice_credit.length == 0 && l.voice_type.length == 0) continue;
+            seen += vid;
+            string ds = l.voice_display.length > 0 ? quote_voice_token (encode_html_entities (l.voice_display)) : "";
+            string cs = l.voice_credit.length > 0 ? quote_voice_token (encode_html_entities (l.voice_credit)) : "";
+            // Positional slots: name, credit — then the type= key. Empty
+            // slots are kept only when a later slot is filled:
+            // @[v1,Glinda], @[v1,,"Credit",type=person], @[v1000,type=group].
+            var rest = new StringBuilder ();
+            if (ds.length == 0 && cs.length == 0) {
+                // Type-only declaration: @[v1000,type=group]
+                rest.append ("type=%s".printf (l.voice_type));
+            } else {
+                rest.append (ds);
+                if (cs.length > 0) {
+                    rest.append_c (',');
+                    rest.append (cs);
+                }
+                if (l.voice_type.length > 0) {
+                    if (rest.len > 0) rest.append_c (',');
+                    rest.append ("type=%s".printf (l.voice_type));
+                }
+            }
+            sb.append ("@[%s,%s]\n".printf (vid, rest.str));
+        }
+        return sb.str;
+    }
+
+    public string serialize_to_lrc_plus (LyricLine[] lines) {
+        var sb = new StringBuilder ();
+        sb.append (serialize_voice_table (lines));
+        // Song-section context: emit a bare [Chorus] marker when the section
+        // changes. Legacy players fail the timestamp parse and skip it;
+        // the parser folds it back into LyricLine.section; the renderer
+        // ignores it.
+        string last_section = "";
+        foreach (var l in lines) {
+            if (l.time_ms < 0) continue;
+            if (l.section.length > 0 && l.section != last_section) {
+                sb.append ("[%s]\n".printf (l.section));
+                last_section = l.section;
+            } else if (l.section.length == 0) {
+                last_section = "";
+            }
+            // Headers are ALWAYS bare [mm:ss.xx]Text — no {…} block ever —
+            // so legacy players print clean lyrics verbatim.
             sb.append ("[%s]".printf (format_ms_as_timestamp (l.time_ms)));
-            var block = build_header_attr_block (l);
-            if (block.length > 0)
-                sb.append (block);
-            sb.append (l.text);
+            sb.append (encode_html_entities (l.text));
             sb.append_c ('\n');
 
             if (l.words.length > 0) {
-                // v2 inline Variant A absolute: <mm:ss.xx:mm:ss.xx>{style:}Word ...
+                // v2 inline Variant A absolute with comma separator:
+                // {v1}<mm:ss.xx,mm:ss.xx>Word — comma avoids the 4-colon
+                // confusion of <00:01.31:00:01.66>. The {…} voice/style
+                // block leads the timing line (which legacy players skip).
+                // Space separates words; no space glues syllables:
+                // {v2}<01:53.50,01:53.70>Def<01:53.70,01:54.96>y<…>ing <…>gravity
+                var block = build_timing_attr_block (l);
+                if (block.length > 0)
+                    sb.append (block);
                 for (var wi = 0; wi < l.words.length; wi++) {
                     var w = l.words[wi];
                     var start_ts = format_sec_as_timestamp (w.start_sec);
                     var end_ts = format_sec_as_timestamp (w.end_sec);
-                    sb.append ("<%s:%s>".printf (start_ts, end_ts));
+                    sb.append ("<%s,%s>".printf (start_ts, end_ts));
                     string w_block = "";
                     if (w.style.length > 0 || w.effect.length > 0) {
                         var wb = new StringBuilder ();
@@ -1139,8 +1901,10 @@ namespace G4 {
                         w_block = "{%s}".printf (wb.str);
                     }
                     if (w_block.length > 0) sb.append (w_block);
-                    sb.append (w.text);
-                    if (wi < l.words.length - 1) sb.append_c (' ');
+                    sb.append (encode_html_entities (w.text));
+                    // Space separates words; syllable continuations glue.
+                    if (wi + 1 < l.words.length && l.words[wi + 1].word_start)
+                        sb.append_c (' ');
                 }
                 sb.append_c ('\n');
             }
