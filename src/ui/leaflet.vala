@@ -109,7 +109,9 @@ namespace G4 {
             } else {
                 minimum = int.max (minimum1, minimum2);
             }
-            natural = int.max (natural1, natural2);
+            // Natural must never be below minimum (children can report natural
+            // below our clamped content width at small sizes)
+            natural = int.max (int.max (natural1, natural2), minimum);
         }
 
         public override void size_allocate (int width, int height, int baseline) {

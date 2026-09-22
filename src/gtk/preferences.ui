@@ -374,5 +374,126 @@
         </child>
       </object>
     </child>
+    <child>
+      <object class="AdwPreferencesPage">
+        <property name="title" translatable="yes">Connections</property>
+        <property name="icon-name">network-transmit-symbolic</property>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title" translatable="yes">Discord</property>
+            <property name="description" translatable="yes">Share what you're listening to via Discord Rich Presence (local IPC only, no account needed).</property>
+            <child>
+              <object class="AdwActionRow">
+                <property name="icon-name">applications-games-symbolic</property>
+                <property name="title" translatable="yes">Show current track in Discord</property>
+                <property name="subtitle" translatable="yes">Talks to your local Discord client. Turn off to stay private.</property>
+                <property name="activatable_widget">discord_btn</property>
+                <child>
+                  <object class="GtkSwitch" id="discord_btn">
+                    <property name="valign">center</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">Last.fm</property>
+            <property name="description" translatable="yes">Scrobble tracks to Last.fm after browser sign-in.</property>
+            <child>
+              <object class="AdwExpanderRow" id="lastfm_row">
+                <property name="icon-name">audio-x-generic-symbolic</property>
+                <property name="title">Last.fm scrobbling</property>
+                <property name="subtitle" translatable="yes">Requires connecting your Last.fm account</property>
+                <property name="show-enable-switch">true</property>
+                <child>
+                  <object class="AdwActionRow" id="lastfm_status_row">
+                    <property name="title" translatable="yes">Status</property>
+                    <property name="subtitle">Not connected</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Account</property>
+                    <property name="subtitle" translatable="yes">Connect in your browser, then you're done</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="valign">center</property>
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkButton" id="lastfm_connect_btn">
+                            <property name="valign">center</property>
+                            <property name="label" translatable="yes">Connect</property>
+                            <style>
+                              <class name="suggested-action"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="lastfm_disconnect_btn">
+                            <property name="valign">center</property>
+                            <property name="label" translatable="yes">Disconnect</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwPreferencesGroup">
+            <property name="title">ListenBrainz</property>
+            <property name="description" translatable="yes">Scrobble with a user token from your ListenBrainz settings page.</property>
+            <child>
+              <object class="AdwExpanderRow" id="listenbrainz_row">
+                <property name="icon-name">audio-x-generic-symbolic</property>
+                <property name="title">ListenBrainz scrobbling</property>
+                <property name="subtitle" translatable="yes">Paste a token, we validate it instantly</property>
+                <property name="show-enable-switch">true</property>
+                <child>
+                  <object class="AdwActionRow" id="listenbrainz_status_row">
+                    <property name="title" translatable="yes">Status</property>
+                    <property name="subtitle">Not connected</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwEntryRow" id="listenbrainz_token_entry">
+                    <property name="title" translatable="yes">User token</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="AdwActionRow">
+                    <property name="title" translatable="yes">Get a token</property>
+                    <property name="subtitle" translatable="yes">Opens ListenBrainz settings in your browser</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="valign">center</property>
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkButton" id="listenbrainz_open_btn">
+                            <property name="valign">center</property>
+                            <property name="label" translatable="yes">Open token page</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton" id="listenbrainz_disconnect_btn">
+                            <property name="valign">center</property>
+                            <property name="label" translatable="yes">Clear</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
   </template>
 </interface>

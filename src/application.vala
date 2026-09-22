@@ -27,6 +27,7 @@ namespace RepeatMode {
         private Thumbnailer _thumbnailer = new Thumbnailer ();
         private SleepTimer? _sleep_timer = null;
         private DiscordRPC? _discord_rpc = null;
+        private ScrobbleManager? _scrobbler = null;
         private Gtk.CssProvider? _custom_css = null;
 
         public signal void index_changed (int index, uint size);
@@ -84,8 +85,13 @@ namespace RepeatMode {
             if (_mpris_id == 0)
                 warning ("Initialize MPRIS session failed\n");
             _sleep_timer = new SleepTimer (this);
+            var settings = _settings = new Settings (application_id);
             _discord_rpc = new DiscordRPC (this);
-            var settings = _settings = new Settings (application_id); 
+            ((!)_discord_rpc).set_enabled (settings.get_boolean ("discord-enabled"));
+            settings.changed["discord-enabled"].connect (() => {
+                _discord_rpc?.set_enabled (settings.get_boolean ("discord-enabled"));
+            });
+            _scrobbler = new ScrobbleManager (this); 
             settings.bind ("color-scheme", this, "color-scheme", SettingsBindFlags.DEFAULT);
             settings.bind ("music-dir", this, "music-folder", SettingsBindFlags.DEFAULT);
             settings.bind ("sort-mode", this, "sort-mode", SettingsBindFlags.DEFAULT);
@@ -430,6 +436,9 @@ namespace RepeatMode {
         }
         public SleepTimer? sleep_timer {
           get { return _sleep_timer; }
+        }
+        public ScrobbleManager? scrobbler {
+          get { return _scrobbler; }
         }
         public async bool add_playlist_to_file_async (Playlist playlist, bool append) {
             var file = File.new_for_uri (playlist.list_uri);

@@ -65,12 +65,34 @@ namespace G4 {
         unowned Adw.ActionRow lyrics_auto_indicator;
         [GtkChild]
         unowned Adw.PreferencesGroup lyrics_providers_group;
+        [GtkChild]
+        unowned Gtk.Switch discord_btn;
+        [GtkChild]
+        unowned Adw.ExpanderRow lastfm_row;
+        [GtkChild]
+        unowned Adw.ActionRow lastfm_status_row;
+        [GtkChild]
+        unowned Gtk.Button lastfm_connect_btn;
+        [GtkChild]
+        unowned Gtk.Button lastfm_disconnect_btn;
+        [GtkChild]
+        unowned Adw.ExpanderRow listenbrainz_row;
+        [GtkChild]
+        unowned Adw.ActionRow listenbrainz_status_row;
+        [GtkChild]
+        unowned Adw.EntryRow listenbrainz_token_entry;
+        [GtkChild]
+        unowned Gtk.Button listenbrainz_open_btn;
+        [GtkChild]
+        unowned Gtk.Button listenbrainz_disconnect_btn;
 
         private GenericArray<Gst.ElementFactory> _audio_sinks = new GenericArray<Gst.ElementFactory> (8);
         private Settings _settings;
         private string[] _provider_order;
         private HashTable<string, Adw.ActionRow> _provider_rows =
             new HashTable<string, Adw.ActionRow> (str_hash, str_equal);
+        private uint _lb_validate_source = 0;
+        private uint _lb_validate_seq = 0;
 
         public PreferencesWindow (Application app) {
             _settings = app.settings;
@@ -128,6 +150,9 @@ namespace G4 {
             _settings.bind ("lyrics-prefer-synced", lyrics_prefer_synced_btn, "active", SettingsBindFlags.DEFAULT);
             _settings.bind ("lyrics-auto-select", lyrics_auto_select_btn, "active", SettingsBindFlags.DEFAULT);
             _settings.bind ("lyrics-plain-fallback", lyrics_plain_fallback_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("discord-enabled", discord_btn, "active", SettingsBindFlags.DEFAULT);
+            _settings.bind ("lastfm-enabled", lastfm_row, "enable-expansion", SettingsBindFlags.DEFAULT);
+            _settings.bind ("listenbrainz-enabled", listenbrainz_row, "enable-expansion", SettingsBindFlags.DEFAULT);
 
             lyrics_autoscroll_timeout_btn.set_value (_settings.get_int ("lyrics-autoscroll-timeout"));
             lyrics_autoscroll_timeout_btn.value_changed.connect (() => {
@@ -164,6 +189,153 @@ namespace G4 {
             audiosink_row.model = new Gtk.StringList (sink_names);
             this.bind_property ("audio_sink", audiosink_row, "selected",
                 BindingFlags.SYNC_CREATE | BindingFlags.BIDIRECTIONAL);
+
+            setup_connections ();
+        }
+
+        private void setup_connections () {
+            var app = (Application) GLib.Application.get_default ();
+            var scrobbler = app.scrobbler;
+
+            // --- Last.fm: status comes from the auth manager; buttons drive it ---
+            if (scrobbler != null) {
+                lastfm_status_row.subtitle = ((!)scrobbler).lastfm_status_text;
+                ((!)scrobbler).notify["lastfm-status-text"].connect (() => {
+                    lastfm_status_row.subtitle = ((!)scrobbler).lastfm_status_text;
+                    lastfm_connect_btn.sensitive = !((!)scrobbler).lastfm_connecting;
+                });
+                ((!)scrobbler).notify["lastfm-connecting"].connect (() => {
+                    lastfm_connect_btn.sensitive = !((!)scrobbler).lastfm_connecting;
+                    lastfm_status_row.subtitle = ((!)scrobbler).lastfm_status_text;
+                });
+            } else {
+                update_lastfm_status ();
+            }
+            _settings.changed["lastfm-session-key"].connect (() => {
+                if (scrobbler == null) update_lastfm_status ();
+            });
+            _settings.changed["lastfm-username"].connect (() => {
+                if (scrobbler == null) update_lastfm_status ();
+            });
+            lastfm_connect_btn.clicked.connect (() => {
+                if (scrobbler != null)
+                    ((!)scrobbler).begin_lastfm_auth.begin (this);
+            });
+            lastfm_disconnect_btn.clicked.connect (() => {
+                if (scrobbler != null)
+                    ((!)scrobbler).lastfm_logout ();
+                else {
+                    _settings.set_string ("lastfm-session-key", "");
+                    _settings.set_string ("lastfm-username", "");
+                    _settings.set_boolean ("lastfm-enabled", false);
+                }
+            });
+
+            // --- ListenBrainz: token entry persisted + validated automatically ---
+            listenbrainz_token_entry.text = _settings.get_string ("listenbrainz-token");
+            listenbrainz_token_entry.changed.connect (() => {
+                _settings.set_string ("listenbrainz-token", listenbrainz_token_entry.text.strip ());
+                queue_listenbrainz_validation ();
+            });
+            _settings.changed["listenbrainz-token"].connect (() => {
+                var t = _settings.get_string ("listenbrainz-token");
+                if (listenbrainz_token_entry.text != t)
+                    listenbrainz_token_entry.text = t;
+                update_listenbrainz_status (null);
+            });
+            update_listenbrainz_status (null);
+            // Enter still validates immediately (no waiting for the debounce)
+            listenbrainz_token_entry.apply.connect (() => validate_listenbrainz_token.begin ());
+            // Validate once when the page opens if a token is already stored
+            if (_settings.get_string ("listenbrainz-token").length > 0)
+                validate_listenbrainz_token.begin ();
+            listenbrainz_open_btn.clicked.connect (() => {
+                new Gtk.UriLauncher ("https://listenbrainz.org/settings/").launch.begin (this, null);
+            });
+            listenbrainz_disconnect_btn.clicked.connect (() => {
+                _settings.set_string ("listenbrainz-token", "");
+                _settings.set_boolean ("listenbrainz-enabled", false);
+                update_listenbrainz_status (null);
+            });
+        }
+
+        private void update_lastfm_status () {
+            var user = _settings.get_string ("lastfm-username");
+            var key = _settings.get_string ("lastfm-session-key");
+            if (key.length > 0) {
+                lastfm_status_row.subtitle = user.length > 0
+                    ? _("Connected as %s").printf (user) : _("Connected");
+            } else {
+                lastfm_status_row.subtitle = _("Not connected");
+            }
+        }
+
+        private void update_listenbrainz_status (string? user_name) {
+            var token = _settings.get_string ("listenbrainz-token");
+            if (token.length == 0) {
+                listenbrainz_status_row.subtitle = _("Not connected");
+            } else if (user_name != null) {
+                listenbrainz_status_row.subtitle = _("Connected as %s").printf ((!)user_name);
+            } else {
+                listenbrainz_status_row.subtitle = _("Token saved — checking…");
+            }
+        }
+
+        private void queue_listenbrainz_validation () {
+            _lb_validate_seq++;
+            if (_lb_validate_source != 0) {
+                Source.remove (_lb_validate_source);
+                _lb_validate_source = 0;
+            }
+            if (_settings.get_string ("listenbrainz-token").length == 0) {
+                update_listenbrainz_status (null);
+                return;
+            }
+            _lb_validate_source = Timeout.add (1000, () => {
+                _lb_validate_source = 0;
+                validate_listenbrainz_token.begin ();
+                return false;
+            });
+        }
+
+        private async void validate_listenbrainz_token () {
+            if (_lb_validate_source != 0) {
+                Source.remove (_lb_validate_source);
+                _lb_validate_source = 0;
+            }
+            var seq = ++_lb_validate_seq;
+            var token = _settings.get_string ("listenbrainz-token").strip ();
+            if (token.length == 0) {
+                update_listenbrainz_status (null);
+                return;
+            }
+            listenbrainz_status_row.subtitle = _("Checking…");
+            var body = yield lyrics_http_get_with_headers (
+                "https://api.listenbrainz.org/1/validate-token",
+                { { "Authorization", "Token " + token } });
+            if (seq != _lb_validate_seq) return; // superseded by newer input
+            if (body == null) {
+                listenbrainz_status_row.subtitle = _("Invalid token or offline");
+                return;
+            }
+            try {
+                var parser = new Json.Parser ();
+                parser.load_from_data ((!)body);
+                var root = parser.get_root ();
+                if (root == null) {
+                    listenbrainz_status_row.subtitle = _("Invalid response");
+                    return;
+                }
+                var obj = ((!)root).get_object ();
+                if (obj == null) {
+                    listenbrainz_status_row.subtitle = _("Invalid response");
+                    return;
+                }
+                var user = ((!)obj).get_string_member ("user_name");
+                update_listenbrainz_status (user);
+            } catch (Error e) {
+                listenbrainz_status_row.subtitle = _("Invalid response");
+            }
         }
 
         private void build_eq_sliders () {

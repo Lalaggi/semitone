@@ -48,6 +48,7 @@ sources = [
   'lyrics/providers/musicbrainz.vala',
   'lyrics/lyrics-sheet.vala',
   'utils/discord-rpc.vala',
+  'utils/scrobble.vala',
   'utils/async-task.vala',
   'utils/cover-cache.vala',
   'utils/data-io.vala',

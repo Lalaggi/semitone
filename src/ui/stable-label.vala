@@ -81,6 +81,10 @@ namespace G4 {
         private static float SPACE = 40f;
 
         public override void snapshot (Gtk.Snapshot snapshot) {
+            // The label may not have an allocation yet on the first frame a sheet
+            // opens — snapshotting it then logs "without a current allocation".
+            if (_label.get_allocated_width () <= 0 || _label.get_allocated_height () <= 0)
+                return;
             var width = get_width ();
             var overflow = marquee && width < _label_width;
             if (!overflow) {

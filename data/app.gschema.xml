@@ -235,5 +235,37 @@
       <summary>Enable per-voice colors in lyrics</summary>
       <description>Colorizes active words and voice badges by voice role, independent of whether badges are shown</description>
     </key>
+    <key name="discord-enabled" type="b">
+      <default>true</default>
+      <summary>Show current track in Discord via Rich Presence</summary>
+    </key>
+    <key name="lastfm-enabled" type="b">
+      <default>false</default>
+      <summary>Scrobble tracks to Last.fm</summary>
+    </key>
+    <key name="lastfm-session-key" type="s">
+      <default>''</default>
+      <summary>Last.fm session key from browser auth</summary>
+    </key>
+    <key name="lastfm-username" type="s">
+      <default>''</default>
+      <summary>Last.fm username</summary>
+    </key>
+    <key name="lastfm-api-key" type="s">
+      <default>'7c6f5c107b5fee14505158bad2889d36'</default>
+      <summary>Last.fm API key (baked in by maintainer or set for custom app)</summary>
+    </key>
+    <key name="lastfm-api-secret" type="s">
+      <default>'2ad819d48f82e4f728727d51afd4a24f'</default>
+      <summary>Last.fm API shared secret</summary>
+    </key>
+    <key name="listenbrainz-enabled" type="b">
+      <default>false</default>
+      <summary>Scrobble tracks to ListenBrainz</summary>
+    </key>
+    <key name="listenbrainz-token" type="s">
+      <default>''</default>
+      <summary>ListenBrainz user token</summary>
+    </key>
   </schema>
 </schemalist>
