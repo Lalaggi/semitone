@@ -2,94 +2,59 @@
 
 # Semitone
 
-A lightweight GTK4 music player written in Vala.
+A lightweight GTK4/libadwaita music player for Linux, written in Vala. Semitone plays your local music collection with gapless GStreamer playback, synced (LRC) lyrics, a 6-band graphic equalizer, ReplayGain normalization, playlists, and MPRIS media controls — in a fast, adaptive GNOME-friendly interface for desktop, tablet, and mobile.
 
-**Source:** [gitlab.com/Lalaggi/semitone](https://gitlab.com/Lalaggi/semitone)
+**Canonical source:** [gitlab.com/Lalaggi/semitone](https://gitlab.com/Lalaggi/semitone) · Mirrors on GitHub and Codeberg · **License:** GPL-3.0 — see [LICENSE](LICENSE)
+
+> **Fork note:** Semitone is a fork of [Gapless](https://github.com/neithern/g4music) (formerly G4Music) by neithern, extended with synced lyrics, an in-app equalizer, and many other improvements. Upstream history is preserved where practical; see release notes in the AppStream metadata for inherited changes.
 
 ![Semitone main library view](screenshots/Semitone%20Main.png)
 
-![Semitone now-playing with synced lyrics](screenshots/Semitone%20Now-Playing.png)
-
-![Semitone lyrics provider](screenshots/Semitone%20Lyrics.png)
+More in [SCREENSHOTS.md](SCREENSHOTS.md) · Install via [INSTALL.md](INSTALL.md)
 
 ## Features
 
-- **Playback** — Shuffle and repeat modes, sleep timer, MPRIS media controls, Discord Rich Presence
-- **Library** — Fast scanning of large collections, groups and sorts by album/artist/title, full-text search, file change monitoring
-- **Queue** — Queue viewer with cover art, drag to reorder
-- **Playlists** — Create, edit, and manage playlists, import/export M3U files
-- **Lyrics** — 13 providers (BetterLyrics, Unison, BiniLyrics, LRCLib, PaxSenix, NetEase, KuGou, MusicBrainz, SimpMusic, Megalobiz, LyricsPlus (QQ, Deezer, and Musixmatch scraping. Community run so endpoints are often overloaded), Genius, Musixmatch), synced lyrics with word-by-word highlighting, auto-scroll + resume chip, click-to-seek, auto-select best match, LRC+ v3 multi-voice with pretty names (`display`/`voice` fallback `Elphaba`/`Glinda`/`Background`), configurable voice labels *None / Coded / Pretty (recommended)* and independent per-voice colors, duplicate filtering, TTML agent-name import
-- **Visuals** — Gaussian blurred cover art background, follows system light/dark mode, adaptive layout for desktop/tablet/mobile, audio peak visualizer
-- **Audio** — ReplayGain volume normalization (track/album), configurable audio sink
-- **Formats** — Supports most audio formats via GStreamer (MP3, FLAC, OGG, OPUS, M4A, WAV, etc.)
-- **Remote** — Samba and other remote protocols via GIO
+- **Gapless playback** — gapless GStreamer playback (MP3, FLAC, OGG, Opus, M4A, WAV, …), Samba and other remote protocols via GIO
+- **Library** — fast scanning of thousands of files with tag cache and low memory use, grouped/sorted by album/artist/title, full-text search, file-change monitoring
+- **Queue** — editable, persistent play queue with cover art and drag-to-reorder, shuffle and repeat (none/all/one) modes
+- **Playlists** — create, rename, edit, and delete playlists; M3U import/export; drag covers between playlists and other apps
+- **Lyrics** — 13 providers (BetterLyrics, Unison, BiniLyrics, LRCLib, PaxSenix, NetEase, KuGou, MusicBrainz, SimpMusic, Megalobiz, LyricsPlus, Genius, Musixmatch), synced lyrics with word-by-word highlighting, click-to-seek, auto-scroll with resume delay, auto-select best match, LRC+ v3 multi-voice labels and per-voice colors, TTML import
+- **Equalizer** — in-app 6-band graphic equalizer (62 Hz – 10 kHz, −24 dB to +12 dB), persisted per band in GSettings
+- **Audio** — ReplayGain volume normalization (track/album), configurable GStreamer audio sink, audio peak visualizer with custom characters
+- **Controls** — sleep timer (with finish-track option), MPRIS media controls, Discord Rich Presence, background playback, cover rotation, custom CSS, UI scale, and list density options
+- **Visuals** — Gaussian-blurred cover-art background, follows system light/dark mode, adaptive layout for desktop/tablet/mobile with stable bottom-tab navigation (category buttons no longer jump between header and tabs at different window sizes), grid or list views
 
-## Dependencies
+## Install
 
-**Arch Linux:**
+See [INSTALL.md](INSTALL.md) for Flatpak, [gitpkg](https://gitlab.com/Lalaggi/gitpkg), and from-source instructions with per-distro dependencies.
 
-```bash
-sudo pacman -S vala meson gtk4 libadwaita gstreamer gst-plugins-base libsoup3 json-glib libxml2
-```
+## Semitone vs Gapless / G4Music
 
-**Debian/Ubuntu:**
+Semitone is a fork of Gapless (formerly G4Music by neithern) for listeners who want more than minimal playback.
+It keeps the upstream strengths — fast library scanning for large collections, gapless GStreamer playback,
+ReplayGain, MPRIS, an audio peak visualizer, M3U playlist import/export, and an adaptive GTK4/libadwaita
+interface — and adds what upstream lacks: word-by-word synced lyrics from 13 providers with click-to-seek
+and LRC+ v3 multi-voice support, an in-app 6-band graphic equalizer, a sleep timer, Discord Rich Presence,
+and a persistent editable queue. It also reworks navigation for accessibility and intuitiveness: upstream
+moves the music-category buttons between bottom tabs, header shortcuts, and other placements depending on
+window size, despite claiming GNOME HIG closeness — Semitone keeps them as stable bottom tabs. If you like
+Gapless but miss lyrics, an EQ, or a UI that stays put, Semitone is the drop-in next step.
 
-```bash
-sudo apt install vala meson libgtk-4-dev libadwaita-1-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libsoup-3.0-dev libjson-glib-dev libxml2-dev
-```
+## Screenshots
 
-**Fedora:**
+See [SCREENSHOTS.md](SCREENSHOTS.md).
 
-```bash
-sudo dnf install vala meson gtk4-devel libadwaita-devel gstreamer1-devel gstreamer1-plugins-base-devel libsoup3-devel json-glib-devel libxml2-devel
-```
+## Documentation
 
-**OpenSUSE Tumbleweed**
+- Lyrics format specs: [docs/](docs/) (`LRCPLUS_SPEC.md`, `LRCPLUS_SPEC_V2.md`, `LRCPLUS_SPEC_V3.md`)
+- AppStream release history: [data/app.metainfo.xml.in](data/app.metainfo.xml.in)
 
-```bash
-sudo zypper install vala meson gtk4-devel libadwaita-devel gstreamer-devel gstreamer-plugins-base-devel libsoup3-devel json-glib-devel libxml2-devel
-```
+## Reporting issues
 
-**Void Linux**
-
-```bash
-sudo xbps-install vala meson gtk4-devel libadwaita-devel gstreamer1-devel gst-plugins-base1-devel libsoup3-devel json-glib-devel libxml2-devel
-```
-
-**Alpine**
-
-```bash
-sudo apk add vala meson gtk4.0-dev libadwaita-dev gstreamer-dev gst-plugins-base-dev libsoup3-dev json-glib-dev libxml2-dev
-```
-
-## Installation
-
-### Flatpak
-
-```bash
-flatpak remote-add --if-not-exists lalaggi-flatpak https://flatpak.lalaggi.xyz/lalaggi-flatpak.flatpakrepo
-flatpak install lalaggi-flatpak xyz.lalaggi.semitone
-```
-
-### Recommended: [gitpkg](https://gitlab.com/Lalaggi/gitpkg)
-
-```bash
-gitpkg install Lalaggi/semitone --supplier gitlab.com
-```
-
-### From Source
-
-```bash
-git clone https://gitlab.com/Lalaggi/semitone.git
-cd semitone
-meson setup build --buildtype=release --prefix=/usr
-sudo ninja -C build install
-```
-
-## Reporting Issues
+Please report bugs and feature requests on GitLab (the canonical forge; GitHub/Codeberg are read-only mirrors):
 
 <https://gitlab.com/Lalaggi/semitone/-/issues>
 
-## License
+## Keywords
 
-GPL-3.0 — see [LICENSE](LICENSE).
+gtk4 music player, libadwaita music player, vala music player, linux music player, gnome music app, gstreamer player, gapless playback, synced lyrics, lrc lyrics, word-by-word lyrics, replaygain, graphic equalizer, mpris, offline music player, lightweight music player, flathub alternative, g4music fork, gapless fork

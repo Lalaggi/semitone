@@ -50,7 +50,7 @@ namespace G4 {
         string[] authors = { "Lalaggi, aka EliLovesComputers" };
         /* Translators: Replace "translator-credits" with your names, one name per line */
         var translator_credits = _("translator-credits");
-        var website = "https://github.com/lalaggi/semitone";
+        var website = "https://gitlab.com/Lalaggi/semitone";
         var parent = Window.get_default ();
 #if ADW_1_5
         var win = new Adw.AboutDialog ();
@@ -69,7 +69,7 @@ namespace G4 {
         win.developers = authors;
         win.website = website;
         // Hidden easter egg: assets/elilovescomputers.png
-        win.issue_url = "https://github.com/lalaggi/semitone/issues";
+        win.issue_url = "https://gitlab.com/Lalaggi/semitone/-/issues";
         win.translator_credits = translator_credits;
 #if ADW_1_5
         win.present (parent);

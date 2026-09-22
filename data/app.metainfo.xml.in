@@ -28,22 +28,17 @@
     <translation type="gettext">semitone</translation>
 
     <description>
-      	<p>Gapless (AKA: G4Music) is a light weight music player written in GTK4, focuses on large music collection.</p>
+      	<p>Semitone is a fast, lightweight GTK4/libadwaita music player written in Vala, focused on large local music collections. It is a fork of Gapless (formerly G4Music by neithern), extended with synced lyrics, a graphic equalizer, and many usability improvements.</p>
         <p>Features</p>
         <ul>
-        <li>Supports most music file types, Samba and any other remote protocols (depends on GIO and GStreamer).</li>
-        <li>Fast loading and parsing thousands of music files in very few seconds, monitor local changes.</li>
-        <li>Low memory usage for large music collection with album covers (embedded and external), no thumbnail caches to store.</li>
-        <li>Group and sorts by album/artist/title, shuffle list, full-text searching.</li>
-        <li>Fluent adaptive user interface for different screen (Desktop, Tablet, Mobile).</li>
-        <li>Gaussian blurred cover as background, follows GNOME light/dark mode.</li>
-        <li>Supports creating and editing playlists, drag cover to change order or add to another playlist.</li>
-        <li>Supports drag and drop with other apps.</li>
-        <li>Supports audio peaks visualizer.</li>
-        <li>Supports gapless playback.</li>
-        <li>Supports normalizing volume with ReplayGain.</li>
-        <li>Supports specified audio sink.</li>
-        <li>Supports MPRIS control.</li>
+        <li>Gapless playback of most music file types via GStreamer (MP3, FLAC, OGG, Opus, M4A, WAV, …), plus Samba and other remote protocols via GIO.</li>
+        <li>Fast loading and parsing of thousands of music files in seconds, with tag cache, low memory usage, and monitoring of local changes.</li>
+        <li>Group and sort by album/artist/title, shuffle and repeat modes, full-text search, editable persistent queue with drag-to-reorder.</li>
+        <li>Synced lyrics from 13 providers with word-by-word highlighting, click-to-seek, auto-scroll, and multi-voice (LRC+ v3) support.</li>
+        <li>6-band graphic equalizer, ReplayGain volume normalization (track/album), configurable GStreamer audio sink.</li>
+        <li>Fluent adaptive interface for desktop, tablet, and mobile; blurred cover-art background; follows system light/dark mode.</li>
+        <li>Playlists: create, edit, and manage, with M3U import/export and drag-and-drop between apps.</li>
+        <li>Audio peak visualizer, sleep timer, MPRIS media controls, Discord Rich Presence.</li>
         </ul>
     </description>
 
@@ -68,6 +63,17 @@
     </screenshots>
 
     <releases>
+        <release version="1.4.0" date="2026-09-22">
+            <description translate="no">
+                <ul>
+                <li>Lyrics upgraded to LRC+ v3 with multi-voice labels and per-voice colors.</li>
+                <li>New lyrics providers: Unison, BiniLyrics, KuGou, QQ and Deezer via LyricsPlus (13 total).</li>
+                <li>Smoother lyrics animation: dimming, word fade, and animated auto-scroll.</li>
+                <li>Fixed equalizer clipping over 0 dB.</li>
+                <li>Fixed marquee imbalance and restored tracks play/shuffle header on launch.</li>
+                </ul>
+            </description>
+        </release>
         <release version="1.3.2" date="2026-08-27">
             <description translate="no">
                 <ul>
