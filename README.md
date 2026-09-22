@@ -6,6 +6,12 @@ A lightweight GTK4 music player written in Vala.
 
 **Source:** [gitlab.com/Lalaggi/semitone](https://gitlab.com/Lalaggi/semitone)
 
+![Semitone main library view](screenshots/Semitone%20Main.png)
+
+![Semitone now-playing with synced lyrics](screenshots/Semitone%20Now-Playing.png)
+
+![Semitone lyrics provider](screenshots/Semitone%20Lyrics.png)
+
 ## Features
 
 - **Playback** — Shuffle and repeat modes, sleep timer, MPRIS media controls, Discord Rich Presence
