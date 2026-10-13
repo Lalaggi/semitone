@@ -12,7 +12,7 @@ namespace G4 {
         { "unison",       "Unison",         "Community-synced lyrics from BetterLyrics users — quality varies but often great" },
         { "binimum",      "BiniLyrics",     "Word-timed TTML lyrics via BiniLyrics (Apple Music archive)" },
         { "simpmusic",    "SimpMusic",      "Word-timed lyrics for YouTube Music tracks (needs YouTube ID in tags)" },
-        { "lyricsplus",   "LyricsPlus",     "Synced lyrics aggregator (Apple, Spotify, Musixmatch)"               },
+        { "lyricsplus",   "LyricsPlus",     "Synced lyrics aggregator (Apple, Spotify, QQ, Deezer)"                },
         { "lrclib",       "LRCLib",         "Crowdsourced synced and plain lyrics"                              },
         { "netease",      "NetEase",        "Synced lyrics from NetEase Music — great for CJK songs"            },
         { "kugou",        "KuGou",          "Synced lyrics from KuGou — great for CJK songs"                  },

@@ -63,6 +63,14 @@
     </screenshots>
 
     <releases>
+        <release version="1.5.1" date="2026-10-13">
+            <description translate="no">
+                <ul>
+                <li>Detect instrumental placeholder lyrics from KuGou/QQ/NetEase and label tracks as Instrumental.</li>
+                <li>LyricsPlus provider improvements.</li>
+                </ul>
+            </description>
+        </release>
         <release version="1.4.0" date="2026-09-22">
             <description translate="no">
                 <ul>

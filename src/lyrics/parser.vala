@@ -154,10 +154,100 @@ namespace G4 {
 
     // ── Candidate builder ─────────────────────────────────────────────
 
+    // ── Instrumental placeholders ───────────────────────────────────
+    //
+    // KuGou (and QQ/NetEase) return template lyrics for instrumental
+    // tracks instead of flagging them, e.g.:
+    //   [00:01.58]纯音乐，请欣赏          (KuGou short form)
+    //   [99:00.00]纯音乐，请欣赏          (same, end-of-track marker)
+    //   此歌曲为没有填词的纯音乐，请您欣赏  (QQ/NetEase long form)
+    //   This song is an instrumental with no lyrics, please enjoy!
+    // These parse as ordinary 1-line LRC and would otherwise be shown
+    // as a lyric. Fold them into the Instrumental labelling system
+    // instead: return the canonical "[instrumental]" candidate (empty
+    // lines, score 0) that LRCLib/MusicBrainz produce and that
+    // LyricsSheet.apply_candidate() already renders as "Instrumental".
+
+    private string normalize_instrumental_text (string s) {
+        var t = s.strip ().down ();
+        // Strip spacing and halfwidth/fullwidth punctuation so
+        // "纯音乐，请欣赏", "纯音乐请欣赏", "纯音乐，请欣赏！" etc. unify.
+        string[] strip_chars = { " ", "\t", "\n", "\r", ",", "，", ".", "。",
+            "!", "！", "?", "？", ";", "；", ":", "：", "\"", "'", "“", "”",
+            "‘", "’", "、", "·", "-", "—", "–", "…", "(", ")", "（", "）",
+            "[", "]", "【", "】", "*", "~", "～" };
+        foreach (var c in strip_chars)
+            t = t.replace (c, "");
+        return t;
+    }
+
+    public bool lyrics_is_instrumental_placeholder_text (string text) {
+        var n = normalize_instrumental_text (text);
+        if (n.length == 0) return false;
+        switch (n) {
+            case "纯音乐请欣赏":
+            case "純音樂請欣賞":
+            case "此歌曲为没有填词的纯音乐请您欣赏":
+            case "此歌曲為沒有填詞的純音樂請您欣賞":
+            case "thissongisaninstrumentalwithnolyricspleaseenjoy":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private bool is_lyric_credit_line (string text) {
+        // Credit lines (作曲: X, 编曲: Y, Composer: Z, ...) carry no sung
+        // content: when they accompany a placeholder (KuGou credits +
+        // "纯音乐，请欣赏") the track is still instrumental. A line is a
+        // credit when the label before the first colon matches a known
+        // credit keyword. Real lyric lines rarely contain a colon with
+        // such a label, so this is conservative by construction.
+        var norm = text.strip ().replace ("：", ":");
+        if (!norm.contains (":")) return false;
+        var parts = norm.split (":", 2);
+        if (parts.length != 2) return false;
+        var prefix = parts[0].strip ().down ();
+        if (prefix.length == 0 || prefix.length > 30) return false;
+        // Single-char labels only match exactly ("词: X"); longer labels
+        // match by containment ("作曲 Composer" contains "作曲").
+        if (prefix == "词" || prefix == "曲" || prefix == "詞") return true;
+        string[] credit_keys = { "作曲", "作词", "作詞", "编曲", "編曲",
+            "制作人", "製作人", "混音", "母带", "吉他", "钢琴", "贝斯",
+            "鼓", "小号", "监制", "助理", "出品", "独奏", "乐器",
+            "composer", "arranger", "producer", "produced", "guitar",
+            "piano", "bass", "drum", "trumpet", "mixing", "mastering",
+            "engineer", "supervisor", "assistant", "solo", "instrumental",
+            "instrument", "lyricist" };
+        foreach (var k in credit_keys) {
+            if (prefix.contains (k)) return true;
+        }
+        return false;
+    }
+
+    public bool lyrics_lines_are_instrumental_only (LyricLine[] lines) {
+        bool found_placeholder = false;
+        foreach (var l in lines) {
+            var t = l.text.strip ();
+            if (t.length == 0) continue;
+            if (lyrics_is_instrumental_placeholder_text (t)) {
+                found_placeholder = true;
+                continue;
+            }
+            if (is_lyric_credit_line (t)) continue;
+            return false;
+        }
+        return found_placeholder;
+    }
+
     public LyricsCandidate? lyrics_build_candidate (string raw, string provider, int index) {
         var format = detect_lyrics_format (raw);
         var parsed = parse (raw, format);
         if (parsed.length == 0) return null;
+        if (lyrics_lines_are_instrumental_only (parsed)) {
+            LyricsCandidate ic = { "[instrumental]", provider, {}, false, 0, LyricsFormat.PLAIN };
+            return ic;
+        }
         bool synced = format != LyricsFormat.PLAIN && format != LyricsFormat.TTML_UNSYNCED;
         var score = lyrics_score_candidate (parsed, format, index, provider);
         LyricsCandidate c = { raw, provider, parsed, synced, score, format };
