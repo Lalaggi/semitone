@@ -29,6 +29,7 @@ namespace G4 {
             "https://lyricsplus.binimum.org"
         };
         string? result = null;
+        bool plain = false;
         foreach (var base_url in base_urls) {
             if (cancellable != null && ((!)cancellable).is_cancelled ()) return null;
             var url = "%s/v2/lyrics/get?title=%s&artist=%s&duration=%d&source=%s".printf (
@@ -53,7 +54,7 @@ namespace G4 {
                 if (raw.contains ("error code: 1033"))
                     break; // hard block on this mirror: try next mirror
                 if (raw.length > 0) {
-                    result = lyricsplus_parse_response (raw);
+                    result = lyricsplus_parse_response (raw, out plain);
                     // null = transport/JSON error (retry same mirror);
                     // "" = valid miss (try next mirror); else got lyrics.
                     if (result == null) {
@@ -65,6 +66,7 @@ namespace G4 {
                         if (lyrics_debug_enabled)
                             lyrics_log ("LyricsPlus: no lyrics at %s".printf (base_url));
                         result = null;
+                        plain = false;
                         break;
                     }
                     break;
@@ -73,14 +75,37 @@ namespace G4 {
             }
             if (result != null && ((!)result).length > 0) break;
             result = null;
+            plain = false;
         }
-        if (result != null && ((!)result).length > 0)
+        if (result != null && ((!)result).length > 0) {
+            if (plain)
+                return lyricsplus_build_plain_candidate ((!)result, index);
             return lyrics_build_candidate ((!)result, "LyricsPlus", index);
+        }
         return null;
     }
 
-    // Returns converted LRC+ text, "" on valid miss, null on error.
-    private string? lyricsplus_parse_response (string raw) {
+    // Plain (unsynced) lyrics are built as a PLAIN candidate explicitly:
+    // format sniffing is unreliable on raw text (a lyric containing "[…]"
+    // or "<…:" could be mistaken for LRC/LRC+), and the candidate must
+    // never claim to be synced.
+    private LyricsCandidate? lyricsplus_build_plain_candidate (string raw, int index) {
+        var parsed = parse_plain (raw);
+        if (parsed.length == 0) return null;
+        if (lyrics_lines_are_instrumental_only (parsed)) {
+            LyricsCandidate ic = { "[instrumental]", "LyricsPlus", {}, false, 0, LyricsFormat.PLAIN };
+            return ic;
+        }
+        var score = lyrics_score_candidate (parsed, LyricsFormat.PLAIN, index, "LyricsPlus");
+        LyricsCandidate c = { raw, "LyricsPlus", parsed, false, score, LyricsFormat.PLAIN };
+        return c;
+    }
+
+    // Returns converted LRC+ text (or plain text when the source is
+    // unsynced), "" on valid miss, null on error.
+    // `plain` is set when the payload had no usable timing.
+    private string? lyricsplus_parse_response (string raw, out bool plain) {
+        plain = false;
         try {
             var parser = new Json.Parser ();
             parser.load_from_data (raw);
@@ -98,7 +123,7 @@ namespace G4 {
             var type = lyricsplus_get_string (obj, "type", "Line");
             // Section names for songPartIndex lookup, when the API provides them
             string[] song_parts = lyricsplus_get_song_parts (obj);
-            var converted = lyricsplus_convert (((!)lyrics_arr), type, song_parts);
+            var converted = lyricsplus_convert (((!)lyrics_arr), type, song_parts, out plain);
             if (converted.strip ().length == 0) return "";
             return converted;
         } catch (Error e) {
@@ -127,10 +152,87 @@ namespace G4 {
         return parts;
     }
 
-    private string lyricsplus_convert (Json.Array lyrics_arr, string type, string[] song_parts) {
+    private string lyricsplus_convert (Json.Array lyrics_arr, string type, string[] song_parts, out bool plain) {
+        // Plain (unsynced) lyrics arrive with every line stamped 00:00.00.
+        // Emitting them as LRC would pin the whole text to 00:00.00 and
+        // make the candidate look synced to the scoring engine.
+        plain = lyricsplus_is_unsynced (lyrics_arr);
+        if (plain)
+            return lyricsplus_convert_plain (lyrics_arr);
         if (type.down () == "word")
             return lyricsplus_convert_word (lyrics_arr, song_parts);
         return lyricsplus_convert_line (lyrics_arr, song_parts);
+    }
+
+    // True when the source has no usable timing at all: every line carries
+    // the same 00:00.00 timestamp (time: 0, duration: 0, empty syllabus).
+    // Such a payload is plain text, not LRC.
+    private bool lyricsplus_is_unsynced (Json.Array lyrics_arr) {
+        int text_lines = 0;
+        bool has_timing = false;
+        lyrics_arr.foreach_element ((arr, i, node) => {
+            var entry = node.get_object ();
+            if (entry == null) return;
+            var e = (!)entry;
+            var text = lyricsplus_get_string (e, "text", "");
+            if (text.strip ().length == 0) return;
+            text_lines++;
+            // A line time of 0 (or no time at all) means "no timing".
+            if (lyricsplus_get_int (e, "time", -1) > 0) has_timing = true;
+            // Word-type payloads may carry the real timings in the
+            // syllabus even when the line timestamp is 0.
+            var syl_node = e.has_member ("syllabus") ? e.get_member ("syllabus") : null;
+            if (syl_node != null && ((!)syl_node).get_node_type () == Json.NodeType.ARRAY) {
+                var syl_arr = ((!)syl_node).get_array ();
+                if (syl_arr != null) {
+                    ((!)syl_arr).foreach_element ((a2, j, snode) => {
+                        var s_entry = snode.get_object ();
+                        if (s_entry == null) return;
+                        if (lyricsplus_get_int ((!)s_entry, "time", -1) > 0) has_timing = true;
+                    });
+                }
+            }
+        });
+        return text_lines > 0 && !has_timing;
+    }
+
+    // Timestamp of the first syllabus unit, or -1 when the entry has no
+    // usable syllable timing.
+    private int64 lyricsplus_first_syllabus_time (Json.Object e) {
+        if (!e.has_member ("syllabus")) return -1;
+        var syl_node = e.get_member ("syllabus");
+        if (syl_node == null || ((!)syl_node).get_node_type () != Json.NodeType.ARRAY)
+            return -1;
+        var syl_arr = ((!)syl_node).get_array ();
+        if (syl_arr == null) return -1;
+        int64 first = -1;
+        ((!)syl_arr).foreach_element ((a2, j, snode) => {
+            if (first >= 0) return;
+            var s_entry = snode.get_object ();
+            if (s_entry == null) return;
+            var t = lyricsplus_get_int ((!)s_entry, "time", -1);
+            if (t >= 0) first = t;
+        });
+        return first;
+    }
+
+    // Plain-text conversion: one lyric line per entry, no timestamps.
+    // Section markers are dropped — without timing they would show up as
+    // literal "[Chorus]" lines in the lyric view.
+    private string lyricsplus_convert_plain (Json.Array lyrics_arr) {
+        var sb = new StringBuilder ();
+        lyrics_arr.foreach_element ((arr, i, node) => {
+            var entry = node.get_object ();
+            if (entry == null) return;
+            var e = (!)entry;
+            var text = lyricsplus_get_string (e, "text", "").strip ();
+            if (text.length == 0) return;
+            text = text.replace ("\n", " ").replace ("\r", " ").strip ();
+            if (text.length == 0) return;
+            sb.append (text);
+            sb.append_c ('\n');
+        });
+        return sb.str;
     }
 
     // Word-type entries are LINES with optional per-syllable timings:
@@ -155,6 +257,14 @@ namespace G4 {
 
             var line_ms = lyricsplus_get_int (e, "time", -1);
             if (line_ms < 0) return;
+            // Hybrid payloads can carry a zero line time while the
+            // syllabus holds the real word timings: fall back to the
+            // first syllable timestamp so the line header is not stuck
+            // at 00:00.00.
+            if (line_ms <= 0) {
+                var first_syl_ms = lyricsplus_first_syllabus_time (e);
+                if (first_syl_ms > 0) line_ms = first_syl_ms;
+            }
             var line_dur = lyricsplus_get_int (e, "duration", -1);
 
             // Section marker when the song part changes (e.g. Verse->Chorus)

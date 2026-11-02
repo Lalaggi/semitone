@@ -16,6 +16,10 @@ namespace RepeatMode {
         private bool _loading = false;
         private string _music_folder = "";
         private uint _mpris_id = 0;
+        private DBusConnection? _mpris_connection = null;
+        private MprisPlayer? _mpris_player = null;
+        private MprisRoot? _mpris_root = null;
+        private uint[] _mpris_reg_ids = {};
         private MusicLoader _loader = new MusicLoader ();
         private Gtk.FilterListModel _current_list = new Gtk.FilterListModel (null, null);
         private ListStore _music_queue = new ListStore (typeof (Music));
@@ -201,6 +205,19 @@ namespace RepeatMode {
             delete_cover_tmp_file_async.begin ((obj, res) => delete_cover_tmp_file_async.end (res));
 
             if (_mpris_id != 0) {
+                // Unregister objects first so pending callers get an
+                // immediate error instead of blocking until timeout,
+                // then release the well-known name.
+                if (_mpris_connection != null) {
+                    foreach (var reg_id in _mpris_reg_ids) {
+                        if (reg_id != 0)
+                            ((!)_mpris_connection).unregister_object (reg_id);
+                    }
+                }
+                _mpris_reg_ids = {};
+                _mpris_player = null;
+                _mpris_root = null;
+                _mpris_connection = null;
                 Bus.unown_name (_mpris_id);
                 _mpris_id = 0;
             }
@@ -568,6 +585,12 @@ namespace RepeatMode {
             return playlist.length > 0 && insert_to_queue (playlist, position, play_now || _current_music == null);
         }
 
+        public async void open_uri_async (string uri) {
+            // MPRIS OpenUri entry point: play a single uri immediately.
+            var file = File.new_for_uri (uri);
+            yield open_files_async ({file}, -1, true);
+        }
+
         public void play_next () {
             current_item++;
             _player.play ();
@@ -757,8 +780,16 @@ public void restore_queue_order () {
 
         private void on_bus_acquired (DBusConnection connection, string name) {
             try {
-                connection.register_object ("/org/mpris/MediaPlayer2", new MprisPlayer (this, connection));
-                connection.register_object ("/org/mpris/MediaPlayer2", new MprisRoot (this));
+                // Keep strong refs: GDBus does not guarantee object lifetime,
+                // and losing them makes the bus name owned but unresponsive
+                // (every client then blocks until timeout).
+                _mpris_connection = connection;
+                _mpris_player = new MprisPlayer (this, connection);
+                _mpris_root = new MprisRoot (this);
+                _mpris_reg_ids = {
+                    connection.register_object ("/org/mpris/MediaPlayer2", (!)_mpris_player),
+                    connection.register_object ("/org/mpris/MediaPlayer2", (!)_mpris_root)
+                };
             } catch (Error e) {
                 warning ("Register MPRIS failed: %s\n", e.message);
             }

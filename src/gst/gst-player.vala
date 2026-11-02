@@ -268,7 +268,10 @@ namespace G4 {
                 if (_seeking) {
                     _seeking = false;
                 }
-                _seeking = ((!)_pipeline).seek_simple (Gst.Format.TIME, Gst.SeekFlags.ACCURATE | Gst.SeekFlags.FLUSH, (int64) position);
+                // KEY_UNIT (not ACCURATE): accurate seeks decode every frame
+                // and can stall the main loop for seconds on VBR/network
+                // files, starving D-Bus dispatch (see MPRIS freeze report).
+                _seeking = ((!)_pipeline).seek_simple (Gst.Format.TIME, Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT, (int64) position);
             }
         }
 
@@ -376,19 +379,27 @@ namespace G4 {
         }
 
         private void parse_duration () {
+            var start = get_monotonic_time ();
             if (_pipeline != null && ((!)_pipeline).query_duration (Gst.Format.TIME, out _duration)) {
                 duration_changed (_duration);
             } else {
                 _duration = Gst.CLOCK_TIME_NONE;
             }
+            var elapsed = get_monotonic_time () - start;
+            if (elapsed > 100000)
+                warning ("MPRIS watchdog: query_duration took %lld ms (pipeline stall?)\n", elapsed / 1000);
         }
 
         private bool parse_position () {
+            var start = get_monotonic_time ();
             if (_pipeline != null && ((!)_pipeline).query_position (Gst.Format.TIME, out _position)) {
                 position_updated (_position);
             } else {
                 _position = Gst.CLOCK_TIME_NONE;
             }
+            var elapsed = get_monotonic_time () - start;
+            if (elapsed > 100000)
+                warning ("MPRIS watchdog: query_position took %lld ms (pipeline stall?)\n", elapsed / 1000);
             return true;
         }
 

@@ -202,6 +202,11 @@
       <default>true</default>
       <summary>Always try synced providers first</summary>
     </key>
+    <key name="lyrics-local-enabled" type="b">
+      <default>true</default>
+      <summary>Enable Local lyrics provider</summary>
+      <description>Load .lrc, .ttml, or .lrcplus files from the song folder automatically</description>
+    </key>
     <key name="lyrics-auto-select" type="b">
       <default>true</default>
       <summary>Automatically select best lyrics from any provider</summary>

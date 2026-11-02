@@ -242,7 +242,16 @@ namespace G4 {
 
     public LyricsCandidate? lyrics_build_candidate (string raw, string provider, int index) {
         var format = detect_lyrics_format (raw);
-        var parsed = parse (raw, format);
+        var content = raw;
+        if (format != LyricsFormat.PLAIN && format != LyricsFormat.TTML_UNSYNCED
+                && lyrics_raw_has_only_zero_timestamps (raw)) {
+            // No real timing in this file (every timestamp is 00:00.00):
+            // present it as plain, unsynced lyrics instead of pretending
+            // it is synced.
+            content = lyrics_lrc_to_plain_text (raw);
+            format = LyricsFormat.PLAIN;
+        }
+        var parsed = parse (content, format);
         if (parsed.length == 0) return null;
         if (lyrics_lines_are_instrumental_only (parsed)) {
             LyricsCandidate ic = { "[instrumental]", provider, {}, false, 0, LyricsFormat.PLAIN };
@@ -250,7 +259,7 @@ namespace G4 {
         }
         bool synced = format != LyricsFormat.PLAIN && format != LyricsFormat.TTML_UNSYNCED;
         var score = lyrics_score_candidate (parsed, format, index, provider);
-        LyricsCandidate c = { raw, provider, parsed, synced, score, format };
+        LyricsCandidate c = { content, provider, parsed, synced, score, format };
         return c;
     }
 
@@ -1817,6 +1826,74 @@ namespace G4 {
         if (frac.length == 1)
             return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val * 100);
         return -1;
+    }
+
+    // ── All-zero timestamps (unsynced payloads) ───────────────────────
+    //
+    // Some providers answer with an LRC skeleton even though the source
+    // has no timing at all: every line carries the same 00:00.00
+    // timestamp. Such a file must never be presented (or scored) as
+    // synced — the whole lyric would appear at once at the start of the
+    // track. Detect that case and fall back to plain lyrics.
+
+    // True when the text carries LRC timestamps but every one of them is
+    // 00:00.00, i.e. the payload has no real timing.
+    public bool lyrics_raw_has_only_zero_timestamps (string raw) {
+        int timed_lines = 0;
+        int non_zero_lines = 0;
+        foreach (var line in raw.split ("\n")) {
+            var ls = line.strip ();
+            if (ls.length < 5 || ls[0] != '[') continue;
+            var close = ls.index_of_char (']');
+            if (close <= 0) continue;
+            var ts = parse_timestamp (ls.substring (1, close - 1));
+            if (ts < 0) continue;
+            timed_lines++;
+            if (ts > 0) non_zero_lines++;
+        }
+        if (timed_lines == 0) return false;
+        if (non_zero_lines > 0) return false;
+        // LRC+ word timings ('<mm:ss.cc,…>') carry the real timing even
+        // when the line headers are all stamped 00:00.00.
+        foreach (var line in raw.split ("\n")) {
+            var ls = line.strip ();
+            var lt = ls.index_of_char ('<');
+            if (lt < 0) continue;
+            var gt = ls.index_of_char ('>', lt);
+            if (gt <= lt) continue;
+            foreach (var unit in ls.substring (lt + 1, gt - lt - 1).split (",")) {
+                var ts = parse_timestamp (unit.strip ());
+                if (ts > 0) return false;
+            }
+        }
+        return true;
+    }
+
+    // Plain-text version of an LRC file: timestamps are stripped and the
+    // timing lines (LRC+ '<…>' units, '{…}' attribute blocks) are
+    // dropped, leaving only the lyric text.
+    public string lyrics_lrc_to_plain_text (string raw) {
+        var sb = new StringBuilder ();
+        foreach (var line in raw.split ("\n")) {
+            var ls = line.strip ();
+            if (ls.length == 0) continue;
+            // LRC+ / Extended LRC timing lines carry no text of their own.
+            if (ls[0] == '<' || ls[0] == '{') continue;
+            if (ls[0] == '[') {
+                var close = ls.index_of_char (']');
+                if (close > 0 && parse_timestamp (ls.substring (1, close - 1)) >= 0) {
+                    var text = ls.substring (close + 1).strip ();
+                    if (text.length > 0) {
+                        sb.append (text);
+                        sb.append_c ('\n');
+                    }
+                    continue;
+                }
+            }
+            sb.append (ls);
+            sb.append_c ('\n');
+        }
+        return sb.str;
     }
 
     public int64 ttml_time_to_ms (string t) {
