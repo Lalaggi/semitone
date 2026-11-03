@@ -9,10 +9,16 @@ namespace G4 {
         private int64 _current_duration = 0;
         private Music? _current_music = null;
         private HashTable<string, Variant> _metadata = new HashTable<string, Variant> (str_hash, str_equal);
+        private unowned Thread<void> _main_thread;
+        private string _loop_status = "None";
+        private double _rate = 1.0;
+
+        public signal void seeked (int64 position);
 
         public MprisPlayer (Application app, DBusConnection connection) {
             _app = app;
             _connection = connection;
+            _main_thread = Thread<void>.self ();
 
             app.index_changed.connect (on_index_changed);
             app.music_changed.connect (on_music_changed);
@@ -65,8 +71,56 @@ namespace G4 {
 
         public int64 position {
             get {
+                // Cached value updated every 100ms by GstPlayer.parse_position.
+                // Never query the pipeline here: a live query_position from a
+                // D-Bus handler would block the main loop on network stalls
+                // and wedge every MPRIS client (see docs/MPRIS_FREEZE_BUG_REPORT.md).
                 var pos = _app.player.position;
                 return pos != Gst.CLOCK_TIME_NONE ? (int64) pos / Gst.USECOND : 0;
+            }
+        }
+
+        public string loop_status {
+            owned get {
+                return _loop_status;
+            }
+            set {
+                _loop_status = value;
+                // Map MPRIS LoopStatus onto the app repeat modes (best effort)
+                switch (value) {
+                    case "Track":
+                        _app.repeat_mode = 2; // RepeatMode.ONE
+                        break;
+                    case "Playlist":
+                        _app.repeat_mode = 1; // RepeatMode.ALL
+                        break;
+                    default:
+                        _loop_status = "None";
+                        _app.repeat_mode = 0; // RepeatMode.NONE
+                        break;
+                }
+            }
+        }
+
+        public double rate {
+            get {
+                return _rate;
+            }
+            set {
+                // Playback rate control is not supported; accept 1.0 only
+                _rate = value == 0 ? 1.0 : value;
+            }
+        }
+
+        public double minimum_rate {
+            get {
+                return 1.0;
+            }
+        }
+
+        public double maximum_rate {
+            get {
+                return 1.0;
             }
         }
 
@@ -98,24 +152,52 @@ namespace G4 {
             }
         }
 
+        // All control methods return immediately and defer pipeline work to
+        // an idle callback. GDBus sends the method reply when the handler
+        // returns, so doing set_state/seek synchronously here would make the
+        // reply wait on GStreamer (network stalls, sink reconfig) and time out
+        // every MPRIS client polling us. Deferring keeps replies < 1ms.
+
         public void next () throws Error {
-            _app.play_next ();
+            Idle.add (() => {
+                _app.play_next ();
+                return false;
+            });
         }
 
         public void previous () throws Error {
-            _app.play_previous ();
+            Idle.add (() => {
+                _app.play_previous ();
+                return false;
+            });
         }
 
         public void play_pause () throws Error {
-            _app.play_pause();
+            Idle.add (() => {
+                _app.play_pause ();
+                return false;
+            });
         }
 
         public void play () throws Error {
-            _app.player.play ();
+            Idle.add (() => {
+                _app.player.play ();
+                return false;
+            });
         }
 
         public void pause () throws Error {
-            _app.player.pause ();
+            Idle.add (() => {
+                _app.player.pause ();
+                return false;
+            });
+        }
+
+        public void stop () throws Error {
+            Idle.add (() => {
+                _app.player.state = Gst.State.READY;
+                return false;
+            });
         }
 
         public void seek (int64 offset) throws Error {
@@ -123,7 +205,31 @@ namespace G4 {
             if (pos == Gst.CLOCK_TIME_NONE) return;
             var new_pos = (int64) pos + offset * Gst.USECOND;
             if (new_pos < 0) new_pos = 0;
-            _app.player.position = (Gst.ClockTime) new_pos;
+            var final_pos = new_pos; // capture by value for closure
+            Idle.add (() => {
+                _app.player.position = (Gst.ClockTime) final_pos;
+                seeked (final_pos / Gst.USECOND);
+                return false;
+            });
+        }
+
+        public void set_position (ObjectPath track_id, int64 position) throws Error {
+            if (track_id != current_track_id ()) return;
+            if (position < 0) return;
+            var new_pos = (Gst.ClockTime) (position * Gst.USECOND);
+            Idle.add (() => {
+                _app.player.position = new_pos;
+                seeked (position);
+                return false;
+            });
+        }
+
+        public void open_uri (string uri) throws Error {
+            var copy = uri;
+            Idle.add (() => {
+                _app.open_uri_async.begin (copy);
+                return false;
+            });
         }
 
         private void on_duration_changed (Gst.ClockTime duration) {
@@ -156,6 +262,8 @@ namespace G4 {
                 _metadata.insert ("xesam:artist", artists.end());
                 _metadata.insert ("xesam:title", new Variant.string (music?.title ?? ""));
                 _metadata.insert ("xesam:album", new Variant.string (music?.album ?? ""));
+                _metadata.insert ("xesam:url", new Variant.string (music?.uri ?? ""));
+                _metadata.insert ("mpris:trackid", new Variant.object_path (current_track_id ()));
                 _metadata.insert ("mpris:length", new Variant.int64 (_current_duration));
             }
         }
@@ -177,6 +285,13 @@ namespace G4 {
             send_property ("PlaybackStatus", new Variant.string (get_mpris_status(state)));
         }
 
+        private string current_track_id () {
+            // Stable per-track object path; falls back to index 0 when unknown.
+            var index = _app.current_item;
+            if (index < 0) index = 0;
+            return "/org/mpris/MediaPlayer2/Track/%d".printf (index);
+        }
+
         private void send_property (string name, Variant variant) {
             var builder = new VariantBuilder (new VariantType ("a{sv}"));
             builder.add ("{sv}", name, variant);
@@ -184,7 +299,36 @@ namespace G4 {
         }
 
         private void send_properties (VariantBuilder builder) {
-            var invalid = new VariantBuilder (new VariantType ("as"));
+            // Gst bus callbacks may arrive off the main thread; D-Bus
+            // emission must happen on the main context to avoid deadlock.
+            // We MUST end the builder here into a Variant before crossing threads,
+            // because GVariantBuilder itself is not thread-safe.
+            Variant props;
+            try {
+                props = builder.end ();
+            } catch (Error e) {
+                warning ("Failed to build MPRIS props: %s\n", e.message);
+                return;
+            }
+
+            unowned Thread<void> self = Thread<void>.self ();
+            if (self != _main_thread) {
+                // Marshal to main loop. props is already frozen.
+                Idle.add (() => {
+                    send_variant (props);
+                    return false;
+                });
+                return;
+            }
+            send_variant (props);
+        }
+
+        private void send_variant (Variant props) {
+            // props is already a{sv}. Build empty as array as Variant, not builder.
+            // Use @ to embed existing Variants: "(s@a{sv}@as)" -> string, Variant a{sv}, Variant as
+            var invalid_builder = new VariantBuilder (new VariantType ("as"));
+            var invalid_variant = invalid_builder.end (); // empty array
+
             try {
                 _connection.emit_signal (
                     null,
@@ -192,10 +336,10 @@ namespace G4 {
                     "org.freedesktop.DBus.Properties",
                     "PropertiesChanged",
                     new Variant (
-                        "(sa{sv}as)",
+                        "(s@a{sv}@as)",
                         "org.mpris.MediaPlayer2.Player",
-                        builder,
-                        invalid
+                        props,
+                        invalid_variant
                     )
                 );
             } catch (Error e) {
@@ -274,4 +418,3 @@ namespace G4 {
         }
     }
 }
-

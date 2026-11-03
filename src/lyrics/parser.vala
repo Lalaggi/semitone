@@ -1,10 +1,32 @@
 namespace G4 {
 
+    // ── Input normalization ───────────────────────────────────────────
+    //
+    // Local files are written by many different tools: Windows editors add
+    // CRLF and a UTF-8 BOM, some taggers leave NUL padding behind, and a
+    // pasted clipboard can contain either. Normalize once at the boundary so
+    // every detector/parser sees the canonical LF/UTF-8 form.
+
+    public string lyrics_normalize_text (string raw) {
+        var text = raw;
+        if (text.has_prefix ("\xEF\xBB\xBF"))
+            text = text.substring (3);
+        if (text.contains ("\x00"))
+            text = text.replace ("\x00", "");
+        if (text.contains ("\r"))
+            text = text.replace ("\r\n", "\n").replace ("\r", "\n");
+        if (!text.validate ())
+            text = text.make_valid ();
+        return text;
+    }
+
     // ── Format detection ──────────────────────────────────────────────
 
     public LyricsFormat detect_lyrics_format (string raw) {
-        if (raw.contains ("<tt") || raw.contains ("<body")) {
-            var doc = Xml.Parser.parse_memory (raw, raw.length);
+        var text = lyrics_normalize_text (raw);
+        var lower = text.down ();
+        if (lower.contains ("<tt") || lower.contains ("<body")) {
+            var doc = Xml.Parser.parse_memory (text, text.length);
             if (doc != null) {
                 unowned Xml.Node* root = doc->get_root_element ();
                 if (root != null) {
@@ -40,8 +62,8 @@ namespace G4 {
             }
         }
 
-        if (raw.contains ("<") && raw.contains (":")) {
-            var lines = raw.split ("\n");
+        if (text.contains ("<") && text.contains (":")) {
+            var lines = text.split ("\n");
             bool has_v1_word_timing_line = false;
             bool has_v2_word_timing_line = false;
             bool has_inline_timing = false;
@@ -116,8 +138,8 @@ namespace G4 {
             if (has_inline_timing) return LyricsFormat.EXTENDED_LRC;
         }
 
-        if (raw.contains ("[")) {
-            var lines = raw.split ("\n");
+        if (text.contains ("[")) {
+            var lines = text.split ("\n");
             foreach (var line in lines) {
                 var ls = line.strip ();
                 if (ls.length >= 5 && ls[0] == '[') {
@@ -135,24 +157,110 @@ namespace G4 {
     }
 
     public LyricLine[] parse (string raw, LyricsFormat format) {
+        var text = lyrics_normalize_text (raw);
         switch (format) {
             case LyricsFormat.TTML_WORD_SYNCED:
             case LyricsFormat.TTML_LINE_SYNCED:
             case LyricsFormat.TTML_UNSYNCED:
-                return parse_ttml (raw);
+                return parse_ttml (text);
             case LyricsFormat.LRC_PLUS:
-                return parse_lrc_plus (raw);
+                return parse_lrc_plus (text);
             case LyricsFormat.EXTENDED_LRC:
-                return parse_extended_lrc (raw);
+                return parse_extended_lrc (text);
             case LyricsFormat.LRC:
-                return parse_lrc (raw);
+                return parse_lrc (text);
             case LyricsFormat.PLAIN:
             default:
-                return parse_plain (raw);
+                return parse_plain (text);
         }
     }
 
+    // ── Edit/paste normalization ──────────────────────────────────────
+    //
+    // The edit box accepts every format the app can read. Detect and parse
+    // the text, then convert rich sync formats into the canonical editable
+    // representation:
+    //   LRC+ / ELRC / TTML  -> canonical LRC+ text, saved as .lrcplus
+    //   LRC                  -> left as standard LRC, saved as .lrc
+    //   PLAIN                -> left as plain text, saved as .lrc
+    // `converted` is true when the text shown to the user changed.
+
+    public string lyrics_prepare_edit_text (string raw,
+                                            out LyricsFormat source_format,
+                                            out LyricsFormat save_format,
+                                            out LyricLine[] lines,
+                                            out bool is_synced,
+                                            out bool converted) {
+        LyricsFormat format;
+        var content = lyrics_normalize_content (raw, out format);
+        source_format = format;
+        save_format = format;
+        lines = parse (content, format);
+        is_synced = lyrics_format_is_synced (format);
+        converted = false;
+
+        if (lines.length == 0)
+            return content;
+
+        switch (format) {
+            case LyricsFormat.LRC_PLUS:
+            case LyricsFormat.EXTENDED_LRC:
+            case LyricsFormat.TTML_WORD_SYNCED:
+            case LyricsFormat.TTML_LINE_SYNCED: {
+                var canonical = serialize_to_lrc_plus (lines);
+                if (canonical.strip ().length > 0) {
+                    content = canonical;
+                    save_format = LyricsFormat.LRC_PLUS;
+                    converted = true;
+                    lines = parse (content, detect_lyrics_format (content));
+                    is_synced = true;
+                }
+                break;
+            }
+            case LyricsFormat.TTML_UNSYNCED:
+                // TTML without timing becomes plain-looking text, but it is
+                // still a TTML import: keep the .lrcplus container per the
+                // local save policy.
+                content = parse_ttml_unsynced_raw (content);
+                save_format = LyricsFormat.TTML_UNSYNCED;
+                lines = parse_plain (content);
+                is_synced = false;
+                converted = true;
+                break;
+            case LyricsFormat.LRC:
+                // Keep the user's standard LRC byte-for-byte (metadata,
+                // timestamps, comments) and save it as .lrc.
+                save_format = LyricsFormat.LRC;
+                break;
+            case LyricsFormat.PLAIN:
+            default:
+                save_format = LyricsFormat.PLAIN;
+                break;
+        }
+        return content;
+    }
+
     // ── Candidate builder ─────────────────────────────────────────────
+
+    public bool lyrics_format_is_synced (LyricsFormat format) {
+        return format != LyricsFormat.PLAIN && format != LyricsFormat.TTML_UNSYNCED;
+    }
+
+    // Normalizes line endings/BOM and folds all-zero timestamp payloads into
+    // plain text. Returns the content to parse and updates `format`.
+    public string lyrics_normalize_content (string raw, out LyricsFormat format) {
+        var text = lyrics_normalize_text (raw);
+        format = detect_lyrics_format (text);
+        if (format != LyricsFormat.PLAIN && format != LyricsFormat.TTML_UNSYNCED
+                && lyrics_raw_has_only_zero_timestamps (text)) {
+            // No real timing in this file (every timestamp is 00:00.00):
+            // present it as plain, unsynced lyrics instead of pretending
+            // it is synced.
+            text = lyrics_lrc_to_plain_text (text);
+            format = LyricsFormat.PLAIN;
+        }
+        return text;
+    }
 
     // ── Instrumental placeholders ───────────────────────────────────
     //
@@ -241,25 +349,17 @@ namespace G4 {
     }
 
     public LyricsCandidate? lyrics_build_candidate (string raw, string provider, int index) {
-        var format = detect_lyrics_format (raw);
-        var content = raw;
-        if (format != LyricsFormat.PLAIN && format != LyricsFormat.TTML_UNSYNCED
-                && lyrics_raw_has_only_zero_timestamps (raw)) {
-            // No real timing in this file (every timestamp is 00:00.00):
-            // present it as plain, unsynced lyrics instead of pretending
-            // it is synced.
-            content = lyrics_lrc_to_plain_text (raw);
-            format = LyricsFormat.PLAIN;
-        }
+        LyricsFormat format;
+        var content = lyrics_normalize_content (raw, out format);
         var parsed = parse (content, format);
         if (parsed.length == 0) return null;
         if (lyrics_lines_are_instrumental_only (parsed)) {
-            LyricsCandidate ic = { "[instrumental]", provider, {}, false, 0, LyricsFormat.PLAIN };
+            LyricsCandidate ic = { "[instrumental]", provider, {}, false, 0, LyricsFormat.PLAIN, "" };
             return ic;
         }
-        bool synced = format != LyricsFormat.PLAIN && format != LyricsFormat.TTML_UNSYNCED;
+        bool synced = lyrics_format_is_synced (format);
         var score = lyrics_score_candidate (parsed, format, index, provider);
-        LyricsCandidate c = { content, provider, parsed, synced, score, format };
+        LyricsCandidate c = { content, provider, parsed, synced, score, format, "" };
         return c;
     }
 
@@ -1811,21 +1911,41 @@ namespace G4 {
     }
 
     public int64 parse_timestamp (string ts) {
-        var parts = ts.split (":");
-        if (parts.length != 2) return -1;
-        var minutes = int.parse (parts[0]);
-        var sec_parts = parts[1].split (".");
+        var t = ts.strip ();
+        if (t.length == 0) return -1;
+
+        // Canonical form is mm:ss.ff, but files in the wild also use
+        // mm:ss, mm:ss:ff (legacy LRC), and a comma decimal separator.
+        // Accept 0-3 fractional digits; longer fractions are malformed.
+        var parts = t.split (":");
+        if (parts.length == 3) {
+            // Legacy [mm:ss:ff] — the third field is the fraction, not hours.
+            parts = { parts[0], "%s.%s".printf (parts[1], parts[2]) };
+        } else if (parts.length != 2) {
+            return -1;
+        }
+
+        var minutes = int.parse (parts[0].strip ());
+        var sec_part = parts[1].strip ();
+        var sec_parts = sec_part.split (".");
+        if (sec_parts.length == 1)
+            sec_parts = sec_part.split (",");
+        if (sec_parts.length == 1) {
+            var seconds = int.parse (sec_part);
+            return (int64) (minutes * 60 * 1000 + seconds * 1000);
+        }
         if (sec_parts.length != 2) return -1;
-        var seconds = int.parse (sec_parts[0]);
-        var frac = sec_parts[1];
-        var frac_val = int.parse (frac);
-        if (frac.length == 3)
-            return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val);
+        var seconds = int.parse (sec_parts[0].strip ());
+        var frac = sec_parts[1].strip ();
+        if (frac.length > 3) return -1;
+        var frac_val = frac.length > 0 ? int.parse (frac) : 0;
         if (frac.length == 2)
-            return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val * 10);
-        if (frac.length == 1)
-            return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val * 100);
-        return -1;
+            frac_val *= 10;
+        else if (frac.length == 1)
+            frac_val *= 100;
+        else if (frac.length == 0)
+            frac_val = 0;
+        return (int64) (minutes * 60 * 1000 + seconds * 1000 + frac_val);
     }
 
     // ── All-zero timestamps (unsynced payloads) ───────────────────────

@@ -44,6 +44,9 @@ namespace G4 {
         public bool is_synced;
         public double score;
         public LyricsFormat format;
+        // Absolute local path when the candidate came from a file next to the
+        // audio (Local provider). Empty for network providers.
+        public string local_path;
     }
 
     public struct LrclibResult {

@@ -61,7 +61,7 @@ namespace G4 {
                         if (tag_obj == null) continue;
                         string? tag_name = ((!)tag_obj).get_string_member ("name");
                         if (tag_name != null && ((!)tag_name).ascii_ncasecmp ("instrumental", 13) == 0) {
-                            LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN };
+                            LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN, "" };
                             return c;
                         }
                     }
@@ -140,7 +140,7 @@ namespace G4 {
                 var w_lang = work_languages[wi];
 
                 if (w_type.ascii_ncasecmp ("Instrumental", 13) == 0) {
-                    LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN };
+                    LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN, "" };
                     return c;
                 }
 
@@ -172,7 +172,7 @@ namespace G4 {
                                     if (tag_obj == null) continue;
                                     string? tag_name = ((!)tag_obj).get_string_member ("name");
                                     if (tag_name != null && ((!)tag_name).ascii_ncasecmp ("instrumental", 13) == 0) {
-                                        LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN };
+                                        LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN, "" };
                                         return c;
                                     }
                                 }
@@ -182,7 +182,7 @@ namespace G4 {
                     }
                 }
 
-                LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN };
+                LyricsCandidate c = { "[instrumental]", "MusicBrainz", {}, false, 0, LyricsFormat.PLAIN, "" };
                 return c;
             }
 

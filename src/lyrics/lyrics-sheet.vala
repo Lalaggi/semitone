@@ -18,6 +18,9 @@ namespace G4 {
         private int64 _offset_ms = 0;
         private string _current_uri = "";
         private string _current_raw = "";
+        // Path of the local .lrc/.lrcplus/.ttml file this lyric came from,
+        // when known. Used to write edits back to the same source.
+        private string _current_local_path = "";
         public Adw.BottomSheet bottom_sheet;
 
         private LyricsEngine _engine;
@@ -1085,6 +1088,103 @@ namespace G4 {
             return sb.str;
         }
 
+        private string edit_format_name (LyricsFormat format) {
+            switch (format) {
+                case LyricsFormat.TTML_WORD_SYNCED: return _("TTML (word-synced)");
+                case LyricsFormat.TTML_LINE_SYNCED: return _("TTML (line-synced)");
+                case LyricsFormat.TTML_UNSYNCED:    return _("TTML (unsynced)");
+                case LyricsFormat.LRC_PLUS:         return _("LRC+");
+                case LyricsFormat.EXTENDED_LRC:     return _("Extended LRC");
+                case LyricsFormat.LRC:              return _("LRC");
+                case LyricsFormat.PLAIN:
+                default:                            return _("Plain text");
+            }
+        }
+
+        private bool save_edited_local_file (Music music, string raw,
+                                             LyricsFormat save_format,
+                                             out string path, out string error) {
+            path = "";
+            error = "";
+            var target = lyrics_local_save_target (music, save_format, _current_local_path);
+            if (target == null) {
+                error = _("No local lyric file location is available.");
+                return false;
+            }
+            if (!lyrics_write_local_file ((!)target, raw, out error))
+                return false;
+            var file = (!)target;
+            path = file.get_path () ?? file.get_uri ();
+            _current_local_path = path;
+            return true;
+        }
+
+        // Detects, parses and persists edit-box text. Used both by the Save
+        // button and by paste (which auto-saves immediately). Returns false
+        // when the text contains no usable lyrics; `local_saved` reports
+        // whether the sibling file write itself succeeded.
+        private bool apply_edited_lyrics (string raw,
+                                          out string prepared,
+                                          out string source_name,
+                                          out string status,
+                                          out bool converted,
+                                          out bool local_saved) {
+            prepared = "";
+            source_name = "";
+            status = "";
+            converted = false;
+            local_saved = false;
+
+            LyricsFormat source_format;
+            LyricsFormat save_format;
+            LyricLine[] lines;
+            bool is_synced;
+            prepared = lyrics_prepare_edit_text (raw,
+                out source_format, out save_format, out lines,
+                out is_synced, out converted);
+            source_name = edit_format_name (source_format);
+
+            if (lines.length == 0 || prepared.strip ().length == 0) {
+                status = _("No lyrics found in the text.");
+                return false;
+            }
+
+            _current_raw = prepared;
+            _lines = lines;
+            _is_synced = is_synced;
+            _is_instrumental = false;
+            _offset_box.visible = _is_synced;
+            lyrics_save_cache (_current_uri, prepared, "Local", _offset_ms);
+
+            var music = _app.current_music;
+            if (music != null) {
+                string path, error;
+                if (save_edited_local_file ((!)music, prepared, save_format,
+                                            out path, out error)) {
+                    local_saved = true;
+                    status = converted
+                        ? _("Detected %s — converted and saved to %s").printf (
+                            source_name, GLib.Path.get_basename (path))
+                        : _("Detected %s — saved to %s").printf (
+                            source_name, GLib.Path.get_basename (path));
+                } else {
+                    status = _("Detected %s — saved to cache, but the local file could not be written: %s").printf (
+                        source_name, error);
+                }
+            } else {
+                status = _("Detected %s — saved to cache.").printf (source_name);
+                local_saved = true;
+            }
+
+            set_provider ("Local");
+            if (_lines.length > 0)
+                populate_list ();
+            else
+                show_not_found ();
+
+            return true;
+        }
+
         private void open_edit_dialog () {
             var dialog = new Adw.Dialog ();
             dialog.title = _("Edit Lyrics");
@@ -1122,26 +1222,68 @@ namespace G4 {
             lint_label.margin_start = 12;
             lint_label.margin_end = 12;
 
+            var status_label = new Gtk.Label ("");
+            status_label.xalign = 0;
+            status_label.wrap = true;
+            status_label.add_css_class ("caption");
+            status_label.add_css_class ("dim-label");
+            status_label.margin_start = 12;
+            status_label.margin_end = 12;
+            status_label.margin_top = 4;
+            status_label.margin_bottom = 8;
+
             var content_box = new Gtk.Box (Gtk.Orientation.VERTICAL, 0);
             content_box.append (scroll);
             content_box.append (lint_label);
+            content_box.append (status_label);
 
             toolbar_view.content = content_box;
             dialog.child = toolbar_view;
 
             save_btn.clicked.connect (() => {
-                var new_raw = text_view.buffer.text;
-                _current_raw = new_raw;
-                lyrics_save_cache (_current_uri, new_raw, _provider_label.label, _offset_ms);
-                var edit_format = detect_lyrics_format (new_raw);
-                _is_synced = edit_format != LyricsFormat.PLAIN && edit_format != LyricsFormat.TTML_UNSYNCED;
-                _lines = parse (new_raw, edit_format);
-                if (_lines.length > 0) {
-                    populate_list ();
+                string prepared, source_name, status;
+                bool converted, local_saved;
+                bool ok = apply_edited_lyrics (text_view.buffer.text,
+                                               out prepared, out source_name,
+                                               out status, out converted,
+                                               out local_saved);
+                if (ok && local_saved) {
+                    dialog.close ();
                 } else {
-                    show_not_found ();
+                    status_label.label = status;
+                    status_label.remove_css_class ("dim-label");
+                    status_label.add_css_class ("error");
                 }
-                dialog.close ();
+            });
+
+            // Paste accepts every format the parser supports. After the
+            // default paste has inserted the clipboard, detect/parse it,
+            // convert rich formats to editable LRC+, and save immediately.
+            bool handling_paste = false;
+            text_view.paste_clipboard.connect (() => {
+                if (handling_paste) return;
+                handling_paste = true;
+                GLib.Idle.add (() => {
+                    string prepared, source_name, status;
+                    bool converted, local_saved;
+                    bool ok = apply_edited_lyrics (text_view.buffer.text,
+                                                   out prepared, out source_name,
+                                                   out status, out converted,
+                                                   out local_saved);
+                    if (ok && prepared != text_view.buffer.text)
+                        text_view.buffer.text = prepared;
+                    lint_label.label = lint_edit_lyrics (text_view.buffer.text);
+                    lint_label.visible = lint_label.label.length > 0;
+                    status_label.label = status;
+                    status_label.remove_css_class ("error");
+                    status_label.remove_css_class ("dim-label");
+                    if (ok && local_saved)
+                        status_label.add_css_class ("dim-label");
+                    else
+                        status_label.add_css_class ("error");
+                    handling_paste = false;
+                    return GLib.Source.REMOVE;
+                });
             });
 
             var win = bottom_sheet.get_root () as Gtk.Window;
@@ -1177,6 +1319,7 @@ namespace G4 {
             _fade_active = {};
             _previous_first_active = -1;
             _current_raw = "";
+            _current_local_path = "";
             _offset_ms = 0;
             update_offset_ui ();
             show_loading ();
@@ -1192,12 +1335,32 @@ namespace G4 {
             }
             var m = (!)music;
             _current_uri = m.uri;
+            var settings = _app.settings;
+
+            // A local lyric file is the user's source of truth: prefer it
+            // over a potentially stale cache or network result.
+            if (settings.get_boolean ("lyrics-local-enabled")) {
+                var local = yield provider_fetch_local (m, 0, settings, 0, _load_cancellable);
+                if (gen != _load_gen) {
+                    _load_cancellable = null;
+                    return;
+                }
+                if (local != null) {
+                    _loading_in_progress = false;
+                    _load_cancellable = null;
+                    apply_candidate (gen, (!)local);
+                    return;
+                }
+            }
 
             string cached_raw, cached_provider;
             int64 cached_offset;
             if (lyrics_load_cache (_current_uri, out cached_raw, out cached_provider, out cached_offset)) {
+                cached_raw = lyrics_normalize_text (cached_raw);
                 _current_raw = cached_raw;
                 _offset_ms = cached_offset;
+                if (cached_provider.has_prefix ("Local"))
+                    _current_local_path = lyrics_preferred_local_path (m);
                 update_offset_ui ();
                 set_provider (cached_provider + " (cached)");
 
@@ -1221,8 +1384,6 @@ namespace G4 {
                     return;
                 }
             }
-
-            var settings = _app.settings;
 
             ulong handler_id = 0;
             handler_id = _engine.candidate_available.connect ((c) => {
@@ -1260,6 +1421,8 @@ namespace G4 {
             if (gen != _load_gen) {
                 return;
             }
+            if (c.local_path.length > 0)
+                _current_local_path = c.local_path;
             if (c.lines.length == 0 && c.raw == "[instrumental]") {
                 _is_instrumental = true;
                 _current_raw = "[instrumental]";

@@ -93,11 +93,11 @@ namespace G4 {
         var parsed = parse_plain (raw);
         if (parsed.length == 0) return null;
         if (lyrics_lines_are_instrumental_only (parsed)) {
-            LyricsCandidate ic = { "[instrumental]", "LyricsPlus", {}, false, 0, LyricsFormat.PLAIN };
+            LyricsCandidate ic = { "[instrumental]", "LyricsPlus", {}, false, 0, LyricsFormat.PLAIN, "" };
             return ic;
         }
         var score = lyrics_score_candidate (parsed, LyricsFormat.PLAIN, index, "LyricsPlus");
-        LyricsCandidate c = { raw, "LyricsPlus", parsed, false, score, LyricsFormat.PLAIN };
+        LyricsCandidate c = { raw, "LyricsPlus", parsed, false, score, LyricsFormat.PLAIN, "" };
         return c;
     }
 

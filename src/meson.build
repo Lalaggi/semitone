@@ -31,6 +31,7 @@ sources = [
   'lyrics/parser.vala',
   'lyrics/http.vala',
   'lyrics/cache.vala',
+  'lyrics/local.vala',
   'lyrics/provider-info.vala',
   'lyrics/engine.vala',
   'lyrics/providers/paxsenix.vala',

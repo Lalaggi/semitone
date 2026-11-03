@@ -18,7 +18,7 @@ More in [SCREENSHOTS.md](SCREENSHOTS.md) · Install via [INSTALL.md](INSTALL.md)
 - **Library** — fast scanning of thousands of files with tag cache and low memory use, grouped/sorted by album/artist/title, full-text search, file-change monitoring
 - **Queue** — editable, persistent play queue with cover art and drag-to-reorder, shuffle and repeat (none/all/one) modes
 - **Playlists** — create, rename, edit, and delete playlists; M3U import/export; drag covers between playlists and other apps
-- **Lyrics** — 13 providers (BetterLyrics, Unison, BiniLyrics, LRCLib, PaxSenix, NetEase, KuGou, MusicBrainz, SimpMusic, Megalobiz, LyricsPlus, Genius, Musixmatch), synced lyrics with word-by-word highlighting, click-to-seek, auto-scroll with resume delay, auto-select best match, LRC+ v3 multi-voice labels and per-voice colors, TTML import
+- **Lyrics** — 13 providers (BetterLyrics, Unison, BiniLyrics, LRCLib, PaxSenix, NetEase, KuGou, MusicBrainz, SimpMusic, Megalobiz, LyricsPlus, Genius, Musixmatch), synced lyrics with word-by-word highlighting, click-to-seek, auto-scroll with resume delay, auto-select best match, LRC+ v3 multi-voice labels and per-voice colors, TTML import, local .lrc/.lrcplus/.ttml loading and saving
 - **Equalizer** — in-app 6-band graphic equalizer (62 Hz – 10 kHz, −24 dB to +12 dB), persisted per band in GSettings
 - **Audio** — ReplayGain volume normalization (track/album), configurable GStreamer audio sink, audio peak visualizer with custom characters
 - **Controls** — sleep timer (with finish-track option), MPRIS media controls, Discord Rich Presence, background playback, cover rotation, custom CSS, UI scale, and list density options

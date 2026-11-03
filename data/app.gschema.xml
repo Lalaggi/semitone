@@ -205,7 +205,7 @@
     <key name="lyrics-local-enabled" type="b">
       <default>true</default>
       <summary>Enable Local lyrics provider</summary>
-      <description>Load .lrc, .ttml, or .lrcplus files from the song folder automatically</description>
+      <description>Load and save .lrc, .ttml, or .lrcplus files next to the song</description>
     </key>
     <key name="lyrics-auto-select" type="b">
       <default>true</default>

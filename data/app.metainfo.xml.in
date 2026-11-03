@@ -63,10 +63,18 @@
     </screenshots>
 
     <releases>
+        <release version="1.6.1" date="2026-11-03">
+            <description translate="no">
+                <ul>
+                <li>Automatically load and save local lyric files (.lrc, .ttml, .lrcplus).</li>
+                <li>New toggle: Automatically load lyric files.</li>
+                </ul>
+            </description>
+        </release>
         <release version="1.6.0" date="2026-11-02">
             <description translate="no">
                 <ul>
-                <li>Automatically load local lyric files (.lrc, .ttml, .lrcplus).</li>
+                <li>Automatically load and save local lyric files (.lrc, .ttml, .lrcplus).</li>
                 <li>New toggle: Automatically load lyric files.</li>
                 </ul>
             </description>
