@@ -42,6 +42,9 @@
             "name": "semitone",
             "builddir": true,
             "buildsystem": "meson",
+            "build-options": {
+                "strip": false
+            },
             "sources": [
                 {
                     "type": "dir",

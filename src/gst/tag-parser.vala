@@ -207,6 +207,11 @@ namespace G4 {
                 var type = head[0] & 0x7f;
                 var size = ((uint32) (head[1]) << 16) | ((uint32) (head[2]) << 8) | head[3];
                 if (type == 4) {
+                    const uint MAX_VORBIS_COMMENT_SIZE = 16 * 1024 * 1024;
+                    if (size > MAX_VORBIS_COMMENT_SIZE) {
+                        print ("FLAC: vorbis comment block too large (%u bytes), skipping\n", size);
+                        break;
+                    }
                     var data = new_uint8_array (size + 4);
                     read_full (stream, data[4:]);
                     head[0] &= (~0x80); // clear the is-last flag
@@ -215,23 +220,37 @@ namespace G4 {
                     tags = merge_tags (tags, tags2);
                     flags |= 0x01;
                 } else if (type == 6) {
+                    const uint MAX_PICTURE_SIZE = 50 * 1024 * 1024;
+                    if (size > MAX_PICTURE_SIZE) {
+                        print ("FLAC: picture block too large (%u bytes), skipping\n", size);
+                        break;
+                    }
                     var data = new_uint8_array (size);
                     read_full (stream, data);
                     uint pos = 0;
                     var img_type = read_uint32_be (data, pos);
                     pos += 4;
                     var img_mimetype_len = read_uint32_be (data, pos);
+                    if (img_mimetype_len > size) {
+                        break;
+                    }
                     pos += 4 + img_mimetype_len;
                     if (pos + 4 > size) {
                         break;
                     }
                     var img_description_len = read_uint32_be (data, pos);
+                    if (img_description_len > size) {
+                        break;
+                    }
                     pos += 4 + img_description_len;
                     pos += 4 * 4; // image properties
                     if (pos + 4 > size) {
                         break;
                     }
                     var img_len = read_uint32_be (data, pos);
+                    if (img_len > size) {
+                        break;
+                    }
                     pos += 4;
                     if (pos + img_len > size) {
                         break;

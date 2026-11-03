@@ -136,6 +136,12 @@ ape_demux_parse_tags (const guint8 * data, gint size)
     if (len == 0)
       goto next_tag;
 
+    /* Sanity cap on tag/value length to avoid feeding enormous
+     * untrusted strings into stack-adjacent C buffers (g_strndup,
+     * sscanf). A value longer than 1 MiB is almost certainly corrupt. */
+    if (len > 1024 * 1024)
+      break;
+
     /* read */
     tag = g_strndup ((gchar *) data + 8, n - 9);
     val = g_strndup ((gchar *) data + n, len);
