@@ -748,20 +748,32 @@ namespace G4 {
                         _app.list_modified = true;
                         _app.snapshot_queue_order ();
                         _app.queue_shuffled = shuffle;
+                        var play_pos = 0;
                         if (shuffle) {
                             uint spos = 0;
-                            bool found = clicked != null && store.find ((Object) clicked, out spos);
-                            if (found) {
-                                //  Start with the activated track (front row of
-                                //  the shuffled queue), shuffle everything behind
+                            //  Only pin a specific song when the caller
+                            //  activated a row beyond the first (dropdown
+                            //  Shuffle/Shuffle All pass index 0: no chosen
+                            //  song, shuffle everything and start at queue[0])
+                            bool pinned = index > 0 && clicked != null
+                                          && store.find ((Object) clicked, out spos);
+                            if (pinned) {
                                 store.remove (spos);
                                 store.insert (0, (Object) clicked);
+                                sort_music_store (store, SortMode.SHUFFLE_KEEP_CURRENT);
+                            } else {
+                                sort_music_store (store, SortMode.SHUFFLE);
                             }
-                            sort_music_store (store, found ? SortMode.SHUFFLE_KEEP_CURRENT : SortMode.SHUFFLE);
+                            play_pos = 0;
+                        } else {
+                            //  Unshuffled: play the activated song at its
+                            //  position in the full (unfiltered) queue
+                            play_pos = clicked != null ? _app.queue_index ((Music) clicked) : index;
+                            if (play_pos < 0)
+                                play_pos = int.min (index, (int) store.get_n_items () - 1);
                         }
                         _app.current_list = _main_list.filter_model;
-                        var pos = clicked != null ? _app.queue_index ((Music) clicked) : index;
-                        _app.current_item = pos >= 0 ? pos : int.min (index, (int) store.get_n_items () - 1);
+                        _app.current_item = play_pos;
                     }
                 } else if (clicked != null) {
                     _app.play_in_queue ((Music) clicked);
