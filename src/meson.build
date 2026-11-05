@@ -37,7 +37,7 @@ sources = [
   'lyrics/providers/paxsenix.vala',
   'lyrics/providers/betterlyrics.vala',
   'lyrics/providers/unison.vala',
-  'lyrics/providers/binimum.vala',
+  'lyrics/providers/lrc-red.vala',
   'lyrics/providers/simpmusic.vala',
   'lyrics/providers/lyricsplus.vala',
   'lyrics/providers/lrclib.vala',

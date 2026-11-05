@@ -18,7 +18,7 @@ More in [SCREENSHOTS.md](SCREENSHOTS.md) · Install via [INSTALL.md](INSTALL.md)
 - **Library** — fast scanning of thousands of files with tag cache and low memory use, grouped/sorted by album/artist/title, full-text search, file-change monitoring
 - **Queue** — editable, persistent play queue with cover art and drag-to-reorder, shuffle and repeat (none/all/one) modes
 - **Playlists** — create, rename, edit, and delete playlists; M3U import/export; drag covers between playlists and other apps
-- **Lyrics** — 13 providers (BetterLyrics, Unison, BiniLyrics, LRCLib, PaxSenix, NetEase, KuGou, MusicBrainz, SimpMusic, Megalobiz, LyricsPlus, Genius, Musixmatch), synced lyrics with word-by-word highlighting, click-to-seek, auto-scroll with resume delay, auto-select best match, LRC+ v3 multi-voice labels and per-voice colors, TTML import, local .lrc/.lrcplus/.ttml loading and saving
+- **Lyrics** — providers including Local, MusicBrainz, LRC.red (was BiniLyrics), Unison, BetterLyrics, LRCLib, NetEase, KuGou, Lyrically (Paxsenix), LyricsPlus (Apple Music, QQ, Deezer, Musixmatch), SimpMusic, Megalobiz, Genius, Musixmatch, synced lyrics with word-by-word highlighting, click-to-seek, auto-scroll with resume delay, auto-select best match, LRC+ v3 multi-voice labels and per-voice colors, TTML import, local .lrc/.lrcplus/.ttml loading and saving
 - **Equalizer** — in-app 6-band graphic equalizer (62 Hz – 10 kHz, −24 dB to +12 dB), persisted per band in GSettings
 - **Audio** — ReplayGain volume normalization (track/album), configurable GStreamer audio sink, audio peak visualizer with custom characters
 - **Controls** — sleep timer (with finish-track option), MPRIS media controls, Discord Rich Presence, background playback, cover rotation, custom CSS, UI scale, and list density options
@@ -33,7 +33,7 @@ See [INSTALL.md](INSTALL.md) for Flatpak, [gitpkg](https://gitlab.com/Lalaggi/gi
 Semitone is a fork of Gapless (formerly G4Music by neithern) for listeners who want more than minimal playback.
 It keeps the upstream strengths — fast library scanning for large collections, gapless GStreamer playback,
 ReplayGain, MPRIS, an audio peak visualizer, M3U playlist import/export, and an adaptive GTK4/libadwaita
-interface — and adds what upstream lacks: word-by-word synced lyrics from 13 providers with click-to-seek
+interface — and adds what upstream lacks: word-by-word synced lyrics from multiple providers with click-to-seek
 and LRC+ v3 multi-voice support, an in-app 6-band graphic equalizer, a sleep timer, Discord Rich Presence,
 and a persistent editable queue. It also reworks navigation for accessibility and intuitiveness: upstream
 moves the music-category buttons between bottom tabs, header shortcuts, and other placements depending on

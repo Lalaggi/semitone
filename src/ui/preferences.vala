@@ -9,7 +9,7 @@ namespace G4 {
         "62", "250", "1k", "4k", "8k", "10k"
     };
 
-    [GtkTemplate (ui = "/com/github/lalaggi/semitone/gtk/preferences.ui")]
+    [GtkTemplate (ui = "/xyz/lalaggi/semitone/gtk/preferences.ui")]
     public class PreferencesWindow : Adw.PreferencesWindow {
         [GtkChild]
         unowned Adw.ComboRow blur_row;

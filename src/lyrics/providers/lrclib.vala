@@ -43,15 +43,13 @@ namespace G4 {
 
     private LyricsCandidate? lyrics_build_lrclib_candidate (string synced, string plain, bool instrumental, int index) {
         if (instrumental) {
-            LyricsCandidate c = { "[instrumental]", "LRCLib", {}, false, 0, LyricsFormat.PLAIN, "" };
-            return c;
+            return lyrics_make_instrumental_candidate ("LRCLib", index);
         }
         if (synced.length > 0) {
             var parsed = parse_lrc (synced);
             if (parsed.length > 0) {
                 if (lyrics_lines_are_instrumental_only (parsed)) {
-                    LyricsCandidate ic = { "[instrumental]", "LRCLib", {}, false, 0, LyricsFormat.PLAIN, "" };
-                    return ic;
+                    return lyrics_make_instrumental_candidate ("LRCLib", index);
                 }
                 var score = lyrics_score_candidate (parsed, LyricsFormat.LRC, index, "LRCLib");
                 LyricsCandidate c = { synced, "LRCLib", parsed, true, score, LyricsFormat.LRC, "" };
@@ -62,8 +60,7 @@ namespace G4 {
             var parsed = parse_plain (plain);
             if (parsed.length > 0) {
                 if (lyrics_lines_are_instrumental_only (parsed)) {
-                    LyricsCandidate ic = { "[instrumental]", "LRCLib", {}, false, 0, LyricsFormat.PLAIN, "" };
-                    return ic;
+                    return lyrics_make_instrumental_candidate ("LRCLib", index);
                 }
                 var score = lyrics_score_candidate (parsed, LyricsFormat.PLAIN, index, "LRCLib");
                 LyricsCandidate c = { plain, "LRCLib", parsed, false, score, LyricsFormat.PLAIN, "" };

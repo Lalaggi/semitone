@@ -33,13 +33,17 @@ namespace G4 {
         double order_score = GLib.Math.fmax (0.0, (10.0 - provider_index) * 1.5);
 
         double trust_bonus = 0.0;
-        if (provider_name == "BetterLyrics" || provider_name == "Unison" || provider_name == "BiniLyrics" || provider_name == "SimpMusic")
+        if (provider_name == "Local")
+            trust_bonus = 999.0;
+        else if (provider_name == "MusicBrainz")
+            trust_bonus = 999.0;
+        else if (provider_name == "LRC.red")
             trust_bonus = 4.0;
-        else if (provider_name == "LRCLib")
+        else if (provider_name == "BetterLyrics")
             trust_bonus = 3.0;
-        else if (provider_name == "LyricsPlus" || provider_name == "NetEase" || provider_name == "KuGou")
+        else if (provider_name == "Unison")
             trust_bonus = 2.0;
-        else if (provider_name == "PaxSenix")
+        else if (provider_name == "LRCLib" || provider_name == "Lyrically")
             trust_bonus = 1.0;
 
         return quality_score + completion_score + synced_pref + order_score + trust_bonus;

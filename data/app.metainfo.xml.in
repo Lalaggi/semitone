@@ -16,14 +16,9 @@
     <url type="vcs-browser">https://gitlab.com/Lalaggi/semitone</url>
 
     <launchable type="desktop-id">@app_id@.desktop</launchable>
-    <!-- Transitional: allow Software Center to replace old ID -->
     <provides>
       <id>@app_id@.desktop</id>
-      <id>com.github.lalaggi.semitone.desktop</id>
     </provides>
-    <replaces>
-      <id>com.github.lalaggi.semitone</id>
-    </replaces>
     <content_rating type="oars-1.1"/>
     <translation type="gettext">semitone</translation>
 
@@ -34,7 +29,7 @@
         <li>Gapless playback of most music file types via GStreamer (MP3, FLAC, OGG, Opus, M4A, WAV, …), plus Samba and other remote protocols via GIO.</li>
         <li>Fast loading and parsing of thousands of music files in seconds, with tag cache, low memory usage, and monitoring of local changes.</li>
         <li>Group and sort by album/artist/title, shuffle and repeat modes, full-text search, editable persistent queue with drag-to-reorder.</li>
-        <li>Synced lyrics from 13 providers with word-by-word highlighting, click-to-seek, auto-scroll, and multi-voice (LRC+ v3) support.</li>
+        <li>Synced lyrics from multiple providers with word-by-word highlighting, click-to-seek, auto-scroll, and multi-voice (LRC+ v3) support.</li>
         <li>6-band graphic equalizer, ReplayGain volume normalization (track/album), configurable GStreamer audio sink.</li>
         <li>Fluent adaptive interface for desktop, tablet, and mobile; blurred cover-art background; follows system light/dark mode.</li>
         <li>Playlists: create, edit, and manage, with M3U import/export and drag-and-drop between apps.</li>

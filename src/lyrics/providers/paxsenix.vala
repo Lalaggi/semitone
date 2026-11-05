@@ -195,7 +195,7 @@ namespace G4 {
 
     public async LyricsCandidate? provider_fetch_paxsenix (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         if (!settings.get_boolean ("lyrics-paxsenix-enabled")) {
-            lyrics_log ("PaxSenix: disable");
+            lyrics_log ("Lyrically: disable");
             return null;
         }
 
@@ -238,7 +238,7 @@ namespace G4 {
                     best_word_match = r.score;
                 }
                 if (r.score >= 150)
-                    return lyrics_build_candidate ((!)lrc, "PaxSenix", index);
+                    return lyrics_build_candidate ((!)lrc, "Lyrically", index);
                 continue;
             }
 
@@ -247,10 +247,10 @@ namespace G4 {
         }
 
         if (best_word_lrc != null)
-            return lyrics_build_candidate ((!)best_word_lrc, "PaxSenix", index);
+            return lyrics_build_candidate ((!)best_word_lrc, "Lyrically", index);
 
         if (plain_fallback != null)
-            return lyrics_build_candidate ((!)plain_fallback, "PaxSenix", index);
+            return lyrics_build_candidate ((!)plain_fallback, "Lyrically", index);
 
         return null;
     }

@@ -348,15 +348,21 @@ namespace G4 {
         return found_placeholder;
     }
 
+    // Instrumental markers still go through the scoring engine so provider
+    // trust bonuses apply (e.g. MusicBrainz/Local outrank lyric providers).
+    public LyricsCandidate lyrics_make_instrumental_candidate (string provider, int index) {
+        var score = lyrics_score_candidate ({}, LyricsFormat.PLAIN, index, provider);
+        LyricsCandidate c = { "[instrumental]", provider, {}, false, score, LyricsFormat.PLAIN, "" };
+        return c;
+    }
+
     public LyricsCandidate? lyrics_build_candidate (string raw, string provider, int index) {
         LyricsFormat format;
         var content = lyrics_normalize_content (raw, out format);
         var parsed = parse (content, format);
         if (parsed.length == 0) return null;
-        if (lyrics_lines_are_instrumental_only (parsed)) {
-            LyricsCandidate ic = { "[instrumental]", provider, {}, false, 0, LyricsFormat.PLAIN, "" };
-            return ic;
-        }
+        if (lyrics_lines_are_instrumental_only (parsed))
+            return lyrics_make_instrumental_candidate (provider, index);
         bool synced = lyrics_format_is_synced (format);
         var score = lyrics_score_candidate (parsed, format, index, provider);
         LyricsCandidate c = { content, provider, parsed, synced, score, format, "" };

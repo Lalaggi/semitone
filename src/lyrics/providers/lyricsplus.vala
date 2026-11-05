@@ -1,45 +1,39 @@
 namespace G4 {
 
-    // LyricsPlus aggregates Apple, Spotify, QQ and Deezer lyrics.
-    // NOTE: musixmatch / musixmatch-word are deliberately NOT requested:
-    // their phrase-level entries were re-chunked as word timings and
-    // poisoned scoring, and both endpoints are chronically rate-limited
-    // (1027) or 404 on the mirrors. Musixmatch is covered by the
-    // dedicated Musixmatch provider instead.
-    private const string LYRICSPLUS_SOURCES = "apple,lyricsplus,spotify,qq,deezer";
+    // LyricsPlus aggregates Apple Music, QQ, Deezer and Musixmatch lyrics.
+    // The live host advertises its sources as:
+    //   {"sources":["qapple","qq","deezer","musixmatch"]}
+    // so Apple Music is requested as "qapple". The former prjktla mirrors are
+    // gone (Cloudflare 1042/1033), so only the binimum host is tried.
+    private const string[] LYRICSPLUS_MIRRORS = {
+        "https://lyricsplus.binimum.org"
+    };
 
-    public async LyricsCandidate? provider_fetch_lyricsplus (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-lyricsplus-enabled")) {
-            lyrics_log ("LyricsPlus: disable");
-            return null;
-        }
+    // Result of a single-source fetch. Returning an object (rather than an
+    // out-parameter) keeps this usable from an async method.
+    private class LyricsPlusPayload : Object {
+        public string text = "";
+        public bool plain = false;
+    }
 
-        var title = music.title.strip ();
-        var artist = music.artist.strip ();
-        if (title.length == 0 || artist.length == 0) {
-            if (lyrics_debug_enabled)
-                lyrics_log ("LyricsPlus: empty title/artist, skipping");
-            return null;
-        }
-
-        var duration_sec = (int) (duration_ms / 1000);
-        string[] base_urls = {
-            "https://lyricsplus.prjktla.workers.dev",
-            "https://lyricsplus.prjktla.my.id",
-            "https://lyricsplus.binimum.org"
-        };
-        string? result = null;
+    // Core fetch for a single LyricsPlus source. Returns converted LRC+ text
+    // (or plain text when the source is unsynced) and whether it was unsynced,
+    // or null on a miss/error.
+    private async LyricsPlusPayload? lyricsplus_fetch_source (string title, string artist, string album,
+                                                              int duration_sec, string source,
+                                                              GLib.Cancellable? cancellable) {
         bool plain = false;
-        foreach (var base_url in base_urls) {
+        string? result = null;
+        foreach (var base_url in LYRICSPLUS_MIRRORS) {
             if (cancellable != null && ((!)cancellable).is_cancelled ()) return null;
             var url = "%s/v2/lyrics/get?title=%s&artist=%s&duration=%d&source=%s".printf (
                 base_url,
                 Uri.escape_string (title, null, false),
                 Uri.escape_string (artist, null, false),
                 duration_sec,
-                LYRICSPLUS_SOURCES);
-            if (music.album.strip ().length > 0)
-                url += "&album=%s".printf (Uri.escape_string (music.album.strip (), null, false));
+                source);
+            if (album.strip ().length > 0)
+                url += "&album=%s".printf (Uri.escape_string (album.strip (), null, false));
             for (var attempt = 0; attempt < 3; attempt++) {
                 if (cancellable != null && ((!)cancellable).is_cancelled ()) return null;
                 var body = yield lyrics_http_get_with_headers_allow_4xx (url, { { "User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" } }, cancellable);
@@ -59,12 +53,12 @@ namespace G4 {
                     // "" = valid miss (try next mirror); else got lyrics.
                     if (result == null) {
                         if (lyrics_debug_enabled)
-                            lyrics_log ("LyricsPlus: unparseable response from %s".printf (base_url));
+                            lyrics_log ("LyricsPlus (%s): unparseable response from %s".printf (source, base_url));
                         break;
                     }
                     if (((!)result).length == 0) {
                         if (lyrics_debug_enabled)
-                            lyrics_log ("LyricsPlus: no lyrics at %s".printf (base_url));
+                            lyrics_log ("LyricsPlus (%s): no lyrics at %s".printf (source, base_url));
                         result = null;
                         plain = false;
                         break;
@@ -77,10 +71,66 @@ namespace G4 {
             result = null;
             plain = false;
         }
-        if (result != null && ((!)result).length > 0) {
-            if (plain)
-                return lyricsplus_build_plain_candidate ((!)result, index);
-            return lyrics_build_candidate ((!)result, "LyricsPlus", index);
+        if (result == null || ((!)result).length == 0) return null;
+        var payload = new LyricsPlusPayload ();
+        payload.text = (!)result;
+        payload.plain = plain;
+        return payload;
+    }
+
+    public async LyricsCandidate? provider_fetch_lyricsplus_apple (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
+        if (!settings.get_boolean ("lyrics-lyricsplus-apple-enabled")) {
+            lyrics_log ("LyricsPlus (Apple Music): disable");
+            return null;
+        }
+        return yield lyricsplus_fetch_provider (music, duration_ms, index, cancellable, "qapple", "Apple Music - LyricsPlus");
+    }
+
+    public async LyricsCandidate? provider_fetch_lyricsplus_qq (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
+        if (!settings.get_boolean ("lyrics-lyricsplus-qq-enabled")) {
+            lyrics_log ("LyricsPlus (QQ Music): disable");
+            return null;
+        }
+        return yield lyricsplus_fetch_provider (music, duration_ms, index, cancellable, "qq", "QQ - LyricsPlus");
+    }
+
+    public async LyricsCandidate? provider_fetch_lyricsplus_deezer (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
+        if (!settings.get_boolean ("lyrics-lyricsplus-deezer-enabled")) {
+            lyrics_log ("LyricsPlus (Deezer): disable");
+            return null;
+        }
+        return yield lyricsplus_fetch_provider (music, duration_ms, index, cancellable, "deezer", "Deezer - LyricsPlus");
+    }
+
+    public async LyricsCandidate? provider_fetch_lyricsplus_musixmatch (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
+        if (!settings.get_boolean ("lyrics-lyricsplus-musixmatch-enabled")) {
+            lyrics_log ("LyricsPlus (Musixmatch): disable");
+            return null;
+        }
+        return yield lyricsplus_fetch_provider (music, duration_ms, index, cancellable, "musixmatch", "MusixMatch - LyricsPlus");
+    }
+
+    // Shared logic: fetch a single source, parse, and build a candidate with
+    // the given provider display name.
+    private async LyricsCandidate? lyricsplus_fetch_provider (Music music, int duration_ms, int index,
+                                                               GLib.Cancellable? cancellable,
+                                                               string source, string provider_name) {
+        var title = music.title.strip ();
+        var artist = music.artist.strip ();
+        if (title.length == 0 || artist.length == 0) {
+            if (lyrics_debug_enabled)
+                lyrics_log ("LyricsPlus (%s): empty title/artist, skipping".printf (source));
+            return null;
+        }
+
+        var duration_sec = (int) (duration_ms / 1000);
+        var payload = yield lyricsplus_fetch_source (title, artist, music.album.strip (),
+                                                       duration_sec, source, cancellable);
+        if (payload != null && ((!)payload).text.length > 0) {
+            var p = (!)payload;
+            if (p.plain)
+                return lyricsplus_build_plain_candidate (p.text, index, provider_name);
+            return lyrics_build_candidate (p.text, provider_name, index);
         }
         return null;
     }
@@ -89,15 +139,13 @@ namespace G4 {
     // format sniffing is unreliable on raw text (a lyric containing "[…]"
     // or "<…:" could be mistaken for LRC/LRC+), and the candidate must
     // never claim to be synced.
-    private LyricsCandidate? lyricsplus_build_plain_candidate (string raw, int index) {
+    private LyricsCandidate? lyricsplus_build_plain_candidate (string raw, int index, string provider_name) {
         var parsed = parse_plain (raw);
         if (parsed.length == 0) return null;
-        if (lyrics_lines_are_instrumental_only (parsed)) {
-            LyricsCandidate ic = { "[instrumental]", "LyricsPlus", {}, false, 0, LyricsFormat.PLAIN, "" };
-            return ic;
-        }
-        var score = lyrics_score_candidate (parsed, LyricsFormat.PLAIN, index, "LyricsPlus");
-        LyricsCandidate c = { raw, "LyricsPlus", parsed, false, score, LyricsFormat.PLAIN, "" };
+        if (lyrics_lines_are_instrumental_only (parsed))
+            return lyrics_make_instrumental_candidate (provider_name, index);
+        var score = lyrics_score_candidate (parsed, LyricsFormat.PLAIN, index, provider_name);
+        LyricsCandidate c = { raw, provider_name, parsed, false, score, LyricsFormat.PLAIN, "" };
         return c;
     }
 
