@@ -350,24 +350,13 @@ namespace G4 {
                 }
             }
             if (music != null) {
-                // If music is in queue, remove from queue directly
+                // If music is in queue, remove only the selected copy from the
+                // queue – not every copy of the same song.
                 var q = app.music_queue;
                 uint pos;
                 if (q.find ((!)music, out pos)) {
-                    // Check if store_panel also contains it – prefer queue when sheet open
-                    if (_queue_sheet.bottom_sheet.open) {
-                        var pl = to_playlist ({(!)music});
-                        if (app.remove_from_queue (pl))
-                            return;
-                    }
-                    // Try queue first even when not open for direct queue removal
-                    var pl2 = to_playlist ({(!)music});
-                    // If queue removal succeeded, done
-                    uint qpos;
-                    if (q.find ((!)music, out qpos)) {
-                        if (app.remove_from_queue (pl2))
-                            return;
-                    }
+                    if (app.remove_from_queue_at (pos))
+                        return;
                 }
                 _store_panel.remove_from_list ((!)music);
             }

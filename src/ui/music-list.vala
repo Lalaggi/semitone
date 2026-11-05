@@ -611,6 +611,13 @@ namespace G4 {
             var size = _selection.get_selection ().get_size ();
             var title = size > 1 ? size.to_string () : (string) null;
             source.set_icon (create_widget_paintable (widget, ref point, title), (int) point.x, (int) point.y);
+            //  Remember which rows are being dragged: a self-drop into this
+            //  same queue store is a rearrange (move), not an add (insert).
+            _drag_source_positions.remove_range (0, _drag_source_positions.length);
+            var n = _filter_model.get_n_items ();
+            for (uint i = 0; i < n; i++)
+                if (_selection.is_selected (i))
+                    _drag_source_positions.add (i);
         }
 
         private Gdk.ContentProvider? on_drag_prepare (Music? music) {
@@ -624,6 +631,10 @@ namespace G4 {
 
         private int _dropping_item = -1;
 
+        //  Rows currently being dragged from this list (model positions).
+        //  A queue self-drop is a rearrange (move), not an add (insert-only).
+        private GenericArray<uint> _drag_source_positions = new GenericArray<uint> ();
+
         private bool on_drop_done (Value value, double x, double y) {
             if (_editable) {
                 uint position = uint.min (_dropping_item, visible_count);
@@ -633,16 +644,37 @@ namespace G4 {
                         position = _data_store.get_n_items ();
                     var playlist = (Playlist) value.get_object ();
                     if (_data_store == _app.music_queue) {
-                        //  The queue only ever grows: inserting into the queue
-                        //  must not dedupe/reuse existing entries.
-                        _app.insert_to_queue (playlist, position);
-                        modified = true;
-                        _app.list_modified = true;
-                        // Immediate sync save for queue to guarantee persistence
-                        Idle.add (() => {
-                            _app.save_queue_sync ();
-                            return false;
-                        });
+                        if (_drag_source_positions.length > 0) {
+                            //  Rearranging within the queue: move the dragged
+                            //  rows to the drop position instead of inserting
+                            //  a duplicate copy.
+                            uint removed_before = 0;
+                            for (var i = _drag_source_positions.length - 1; i >= 0; i--) {
+                                var p = _drag_source_positions[i];
+                                if (p < position)
+                                    removed_before++;
+                                _data_store.remove (p);
+                            }
+                            uint new_pos = position - removed_before;
+                            new_pos = uint.min (new_pos, _data_store.get_n_items ());
+                            _data_store.splice (new_pos, 0, to_object_array (playlist.items));
+                            _app.list_modified = true;
+                            _app.update_current_item ();
+                            Idle.add (() => {
+                                _app.save_queue_sync ();
+                                return false;
+                            });
+                        } else {
+                            //  Adding to the queue from elsewhere: insert-only,
+                            //  the queue only ever grows through this path.
+                            _app.insert_to_queue (playlist, position);
+                            modified = true;
+                            _app.list_modified = true;
+                            Idle.add (() => {
+                                _app.save_queue_sync ();
+                                return false;
+                            });
+                        }
                     } else {
                         bool was = merge_items_to_store (_data_store, playlist.items, ref position);
                         modified |= was;
@@ -656,6 +688,7 @@ namespace G4 {
                 }
             }
             dropping_item = -1;
+            _drag_source_positions.remove_range (0, _drag_source_positions.length);
             return true;
         }
 

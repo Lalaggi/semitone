@@ -595,6 +595,18 @@ namespace RepeatMode {
             return false;
         }
 
+        //  Remove exactly one queue entry at position (the copy the user
+        //  selected), leaving any other copies of the same song in place.
+        public bool remove_from_queue_at (uint position) {
+            var n = _music_queue.get_n_items ();
+            if (position >= n)
+                return false;
+            _music_queue.remove (position);
+            list_modified = true;
+            update_current_item ();
+            return true;
+        }
+
         public void clear_queue () {
             var n = _music_queue.get_n_items ();
             if (n > 0) {
@@ -1102,7 +1114,7 @@ private void on_player_end () {
             }
         }
 
-        private void update_current_item () {
+        public void update_current_item () {
             var index = find_item_in_model (_current_list, _current_music, _current_index);
             if (index == -1 && _current_music != null) {
                 unowned var uri = ((!)_current_music).uri;
