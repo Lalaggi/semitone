@@ -301,9 +301,9 @@ namespace G4 {
             var pls = _music_node as Playlist;
             var playlist = new Playlist (pls?.title ?? "", pls?.list_uri ?? "");
             var items = playlist.items;
-            var count = _filter_model.get_n_items ();
+            var count = _data_store.get_n_items ();
             for (var i = 0; i < count; i++) {
-                var music = (Music) _filter_model.get_item (i);
+                var music = (Music) _data_store.get_item (i);
                 items.add (music);
             }
             return playlist;
@@ -632,16 +632,22 @@ namespace G4 {
                     if (dst_obj == null || !_data_store.find ((!)dst_obj, out position))
                         position = _data_store.get_n_items ();
                     var playlist = (Playlist) value.get_object ();
-                    bool was = merge_items_to_store (_data_store, playlist.items, ref position);
-                    modified |= was;
-                    // For queue, ensure file is saved immediately (not just debounced) to avoid loss
-                    if (was && _data_store == _app.music_queue) {
+                    if (_data_store == _app.music_queue) {
+                        //  The queue only ever grows: inserting into the queue
+                        //  must not dedupe/reuse existing entries.
+                        _app.insert_to_queue (playlist, position);
+                        modified = true;
                         _app.list_modified = true;
                         // Immediate sync save for queue to guarantee persistence
                         Idle.add (() => {
                             _app.save_queue_sync ();
                             return false;
                         });
+                    } else {
+                        bool was = merge_items_to_store (_data_store, playlist.items, ref position);
+                        modified |= was;
+                        if (was)
+                            _app.list_modified = true;
                     }
                 } else {
                     var files = get_dropped_files (value);

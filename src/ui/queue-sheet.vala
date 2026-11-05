@@ -51,8 +51,9 @@ namespace G4 {
             // access protected field via workaround: after construction, set flag via method
             // We expose via internal field; direct access allowed within same namespace
             _list.item_activated.connect ((position, obj) => {
-                app.current_item = (int) position;
-                app.player.play ();
+                var music = obj as Music;
+                if (music != null)
+                    app.play_in_queue ((!)music);
             });
             var thumbnailer = app.thumbnailer;
             var loading_paintable = thumbnailer.create_simple_text_paintable ("...", Thumbnailer.ICON_SIZE);
@@ -88,13 +89,17 @@ namespace G4 {
                 app.queue_shuffled = shuffle_btn.active;
                 if (shuffle_btn.active) {
                     shuffle_btn.opacity = 1.0;
-                    
+
                     var current = app.current_music;
                     if (current != null) {
                         var store = app.music_queue;
                         var count = store.get_n_items ();
-                        
+
                         if (count > 1) {
+                            //  Snapshot the pre-shuffle order here, before any
+                            //  change is applied, so unshuffling restores the
+                            //  order the queue had when shuffle was enabled.
+                            app.snapshot_queue_order ();
                             var arr = new GenericArray<Music> (count);
                             for (var pos = 0; pos < count; pos++) {
                                 arr.add ((Music) store.get_item (pos));

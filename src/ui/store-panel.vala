@@ -611,7 +611,9 @@ namespace G4 {
                     if (!_current_list.playable)
                         _current_list.activate_item (0);
                 }
-                if (_current_list.playable) {
+                //  Only append a page to the queue when it is a different list:
+                //  the queue has already been updated in play_current_list().
+                if (_current_list.playable && _current_list != _main_list) {
                     var playlist = _current_list.get_as_playlist ();
                     _app.insert_to_queue (playlist);
                 }
@@ -728,19 +730,42 @@ namespace G4 {
         private string? _album_key_of_list = null;
 
         private void play_current_list (int index = 0, bool shuffle = false) {
-            if (_current_list.playable) {
-                var playlist = _current_list.get_as_playlist ();
-                var store = _app.music_queue;
-                store.remove_all ();
-                store.splice (0, 0, (Object[]) playlist.items.data);
-                _app.list_modified = true;
-                _app.snapshot_queue_order ();
-                _app.queue_shuffled = shuffle;
-                if (shuffle) {
-                    sort_music_store (store, SortMode.SHUFFLE);
+            var list = _current_list;
+            var store = _app.music_queue;
+            if (list.playable) {
+                //  Activating a row never rebuilds the queue from the visible
+                //  (possibly filtered) model: the backing list decides what is
+                //  queued, search only decides what is shown.
+                var clicked = (Music?) list.filter_model.get_item (uint.max (index, 0));
+                if (list != _main_list) {
+                    var playlist = list.get_as_playlist ();
+                    //  Never replace the queue with an empty list, the queue
+                    //  must not be able to collapse to 0 by an interaction
+                    //  with a filtered or not-yet-loaded page.
+                    if (playlist.length > 0) {
+                        store.remove_all ();
+                        store.splice (0, 0, to_object_array (playlist.items));
+                        _app.list_modified = true;
+                        _app.snapshot_queue_order ();
+                        _app.queue_shuffled = shuffle;
+                        if (shuffle) {
+                            uint spos = 0;
+                            bool found = clicked != null && store.find ((Object) clicked, out spos);
+                            if (found) {
+                                //  Start with the activated track (front row of
+                                //  the shuffled queue), shuffle everything behind
+                                store.remove (spos);
+                                store.insert (0, (Object) clicked);
+                            }
+                            sort_music_store (store, found ? SortMode.SHUFFLE_KEEP_CURRENT : SortMode.SHUFFLE);
+                        }
+                        _app.current_list = _main_list.filter_model;
+                        var pos = clicked != null ? _app.queue_index ((Music) clicked) : index;
+                        _app.current_item = pos >= 0 ? pos : int.min (index, (int) store.get_n_items () - 1);
+                    }
+                } else if (clicked != null) {
+                    _app.play_in_queue ((Music) clicked);
                 }
-                _app.current_list = _main_list.filter_model;
-                _app.current_item = index;
             }
             if (!_app.player.playing) {
                 _app.player.play ();

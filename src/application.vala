@@ -66,6 +66,11 @@ namespace RepeatMode {
                     // Mark modified and schedule debounced save (also handles direct ListStore ops)
                     _list_modified = true;
                     schedule_queue_save ();
+                    // Keep the pre-shuffle snapshot in sync with manual edits
+                    // whenever the queue is not shuffled, so unshuffling can
+                    // only restore order, never stale membership.
+                    if (!_queue_shuffled)
+                        snapshot_queue_order ();
                 }
             });
             _loader.loading_changed.connect ((loading) => _loading = loading);
@@ -494,36 +499,90 @@ namespace RepeatMode {
             return saved;
         }
 
+        //  Index of a music in the queue: exact object first (canonical cache
+        //  item), then fallback to its uri, in case the tag cache replaced the
+        //  object since it was queued.
+        public int queue_index (Music music) {
+            uint pos;
+            if (_music_queue.find (music, out pos))
+                return (int) pos;
+            var uri = music.uri;
+            var count = (int) _music_queue.get_n_items ();
+            for (var i = 0; i < count; i++) {
+                if (((Music) _music_queue.get_item (i)).uri == uri)
+                    return i;
+            }
+            return -1;
+        }
+
+        //  Insert items right after the currently playing item without ever
+        //  touching existing queue entries: "Play at Next" only ever adds, so
+        //  the queue can only grow and no other row is ever moved, reordered
+        //  or offset (a previously played entry keeps its place).
         public int insert_after_current (Playlist playlist) {
-            uint position = 0;
-            if (_current_music != null && _music_queue.find ((!)_current_music, out position)) {
-                position++;
-            } else if (_current_index >= 0 && _current_index < (int) _music_queue.get_n_items ()) {
-                // Fallback: use filtered index if current not in queue (e.g., after filter/sort change)
-                position = (uint) (_current_index + 1);
-                position = uint.min (position, _music_queue.get_n_items ());
-            } else {
-                // No current track or not found: append at end (Play at Next -> queue end)
-                position = _music_queue.get_n_items ();
+            if (playlist.length == 0)
+                return -1;
+            var n = _music_queue.get_n_items ();
+            uint position = n;
+            if (_current_music != null) {
+                var index = queue_index ((!)_current_music);
+                position = index != -1 ? (uint) index + 1 : n;
             }
-            var changed = merge_items_to_store (_music_queue, playlist.items, ref position);
-            list_modified |= changed;
-            if (changed) {
-                update_current_item ();
-            }
+            position = uint.min (position, n);
+            _music_queue.splice (position, 0, to_object_array (playlist.items));
+            list_modified = true;
+            update_current_item ();
             return (int) position;
         }
 
+        //  Append items to the end of the queue, or insert at an explicit
+        //  position (drag & drop). Never removes or moves existing entries:
+        //  adding to the queue must never shrink or reshuffle it.
         public bool insert_to_queue (Playlist playlist, uint position = -1, bool play_now = false) {
-            var changed = merge_items_to_store (_music_queue, playlist.items, ref position);
-            list_modified |= changed;
+            if (playlist.length == 0)
+                return false;
+            var n = _music_queue.get_n_items ();
+            position = uint.min (position, n);
+            _music_queue.splice (position, 0, to_object_array (playlist.items));
+            list_modified = true;
             if (play_now) {
                 current_item = (int) position;
                 _player.play ();
-            } else if (changed) {
+            } else {
                 update_current_item ();
             }
-            return changed;
+            return true;
+        }
+
+        //  Activate a row of the queue (queue sheet / queue page): always play
+        //  exactly the row the user activated, even while a search filter
+        //  hides some of the queue.
+        public void play_in_queue (Music music) {
+            var index = find_item_in_model (_current_list, music);
+            if (index == -1) {
+                //  Row not visible in the (possibly filtered) queue view:
+                //  still play the exact requested track, keep the displayed
+                //  index as close as possible. Filter models preserve order,
+                //  so the index only needs clamping when hidden entries
+                //  come before it.
+                var pos = queue_index (music);
+                if (pos == -1)
+                    return;
+                var size = _current_list.get_n_items ();
+                current_music = music;
+                index = int.min ((int) pos, (int) size);
+                if (index >= (int) size)
+                    index = (int) size - 1;
+                if (index != _current_index || size != _current_list_size) {
+                    _current_index = index;
+                    _current_list_size = size;
+                    index_changed (index, size);
+                }
+                _player.play ();
+                return;
+            }
+            current_item = index;
+            _player.play ();
         }
 
         public bool remove_from_queue (Playlist playlist) {
@@ -647,18 +706,41 @@ namespace RepeatMode {
             return saved;
         }
         public void snapshot_queue_order () {
-    _queue_original_order.remove_range (0, _queue_original_order.length);
-    var count = _music_queue.get_n_items ();
-    for (var i = 0; i < count; i++) {
-        _queue_original_order.add ((Music) _music_queue.get_item (i));
-    }
-}
+            _queue_original_order.remove_range (0, _queue_original_order.length);
+            var count = _music_queue.get_n_items ();
+            for (var i = 0; i < count; i++) {
+                _queue_original_order.add ((Music) _music_queue.get_item (i));
+            }
+        }
 
-public void restore_queue_order () {
-    if (_queue_original_order.length == 0) return;
-    _music_queue.remove_all ();
-    _music_queue.splice (0, 0, to_object_array (_queue_original_order));
-}
+        //  Undo the shuffle: order-only restore. Items added after the
+        //  snapshot keep their position, items removed after it cannot come
+        //  back, so unshuffling can never change the queue count.
+        public void restore_queue_order () {
+            var n = (int) _music_queue.get_n_items ();
+            var orig_count = _queue_original_order.length;
+            if (n == 0 || orig_count == 0)
+                return;
+            //  Set of queue items still waiting to be placed
+            var current = new GenericSet<Music> (direct_hash, direct_equal);
+            for (var i = 0; i < n; i++)
+                current.add ((Music) _music_queue.get_item (i));
+            var order = new GenericArray<Music> (n);
+            for (var i = 0; i < orig_count; i++) {
+                var music = _queue_original_order[i];
+                if (current.contains (music)) {
+                    current.remove (music);   // mark as placed
+                    order.add (music);
+                }
+            }
+            //  Anything not in the snapshot (added since) keeps its order
+            for (var i = 0; i < n; i++) {
+                var music = (Music) _music_queue.get_item (i);
+                if (current.contains (music))
+                    order.add (music);
+            }
+            _music_queue.splice (0, n, to_object_array (order));
+        }
         public async bool save_queue_to_file () {
             var count = _music_queue.get_n_items ();
             var uris = new GenericArray<string> (count);
