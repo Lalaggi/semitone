@@ -1,10 +1,6 @@
 namespace G4 {
 
     public async LyricsCandidate? provider_fetch_lrclib (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-lrclib-enabled")) {
-            lyrics_log ("LRCLib: disable");
-            return null;
-        }
 
         var url = "https://lrclib.net/api/search?track_name=%s&artist_name=%s&album_name=%s".printf (
             Uri.escape_string (music.title, null, false),

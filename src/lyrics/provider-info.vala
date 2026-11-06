@@ -8,7 +8,8 @@ namespace G4 {
 
     public const LyricsProviderInfo[] LYRICS_PROVIDERS = {
         { "local",        "Local",          "Local .lrc, .ttml, or .lrcplus files next to the song" },
-        { "musicbrainz",  "MusicBrainz",    "Instrumental detection only, provides no lyrics" },
+        { "reccobeats",   "ReccoBeats",     "Instrumental detection via audio analysis (ISRC lookup with Deezer fallback) — provides no lyrics" },
+        { "musicbrainz",  "MusicBrainz",    "Instrumental detection only via community tags — false positives are VERY common, provides no lyrics" },
         { "lrc-red",      "LRC.red",        "Lyrics aggregator across multiple sources with their own ranked database providing the best results" },
         { "unison",       "Unison",         "Community-sourced synced TTML from the BetterLyrics community — generally quite good, but quality is not guaranteed" },
         { "betterlyrics", "BetterLyrics",   "Best word-timed lyrics, aggregated from many sources" },
@@ -27,11 +28,10 @@ namespace G4 {
     };
 
     public const string DEFAULT_PROVIDER_ORDER =
-        "local,musicbrainz,lrc-red,unison,betterlyrics,lrclib,netease,kugou,paxsenix,lyricsplus-apple,lyricsplus-qq,lyricsplus-deezer,lyricsplus-musixmatch,simpmusic,megalobiz,genius,musixmatch";
+        "local,lrc-red,unison,betterlyrics,lrclib,netease,kugou,reccobeats,paxsenix,lyricsplus-apple,lyricsplus-qq,lyricsplus-deezer,lyricsplus-musixmatch,simpmusic,megalobiz,genius,musixmatch,musicbrainz";
 
+    // NOTE: enabled gating happens in the engine (lyrics-local-enabled), not here.
     public async LyricsCandidate? provider_fetch_local (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-local-enabled")) return null;
-
         LyricsCandidate? best = null;
         double best_score = -1.0;
         foreach (var lyric_file in lyrics_find_local_files (music)) {
@@ -57,6 +57,7 @@ namespace G4 {
     public async LyricsCandidate? lyrics_fetch_provider (string id, Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
         switch (id) {
             case "local":        return yield provider_fetch_local (music, duration_ms, settings, index, cancellable);
+            case "reccobeats":   return yield provider_fetch_reccobeats (music, duration_ms, settings, index, cancellable);
             case "musicbrainz":  return yield provider_fetch_musicbrainz (music, duration_ms, settings, index, cancellable);
             case "lrc-red":      return yield provider_fetch_lrc_red (music, duration_ms, settings, index, cancellable);
             case "unison":       return yield provider_fetch_unison (music, duration_ms, settings, index, cancellable);

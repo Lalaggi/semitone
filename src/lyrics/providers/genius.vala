@@ -1,10 +1,6 @@
 namespace G4 {
 
     public async LyricsCandidate? provider_fetch_genius (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-genius-enabled")) {
-            lyrics_log ("Genius: disable");
-            return null;
-        }
 
         var query = Uri.escape_string ("%s %s".printf (music.title, music.artist), null, false);
         var scrape_url = "https://genius.com/search?q=%s".printf (query);

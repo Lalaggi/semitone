@@ -43,7 +43,7 @@ namespace G4 {
             trust_bonus = 3.0;
         else if (provider_name == "Unison")
             trust_bonus = 2.0;
-        else if (provider_name == "LRCLib" || provider_name == "Lyrically")
+        else if (provider_name == "LRCLib" || provider_name == "Lyrically" || provider_name == "ReccoBeats")
             trust_bonus = 1.0;
 
         return quality_score + completion_score + synced_pref + order_score + trust_bonus;
@@ -116,6 +116,18 @@ namespace G4 {
                 if (cancellable != null && ((!)cancellable).is_cancelled ()) break;
                 var pid = provider_order[pi].strip ();
 
+                // Resolve the display name for logs (falls back to the id)
+                var display = pid;
+                foreach (var p in LYRICS_PROVIDERS)
+                    if (p.id == pid) { display = p.display_name; break; }
+
+                // The enabled gate lives here, not in each provider, so a
+                // disabled provider is skipped and logged exactly once.
+                if (display != pid && !settings.get_boolean ("lyrics-%s-enabled".printf (pid))) {
+                    lyrics_log ("%s: disable".printf (display));
+                    continue;
+                }
+
                 try {
                     var candidate = yield lyrics_fetch_provider (pid, music, duration_ms, settings, pi, cancellable);
                     if (cancellable != null && ((!)cancellable).is_cancelled ()) break;
@@ -134,10 +146,10 @@ namespace G4 {
                             lyrics_format_source (c.format)));
                         process_candidate (c);
                     } else {
-                        lyrics_log ("%s: no match".printf (pid));
+                        lyrics_log ("%s: no match".printf (display));
                     }
                 } catch (Error e) {
-                    lyrics_log ("%s: error: %s".printf (pid, e.message));
+                    lyrics_log ("%s: error: %s".printf (display, e.message));
                 }
             }
 

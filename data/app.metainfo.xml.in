@@ -58,6 +58,13 @@
     </screenshots>
 
     <releases>
+        <release version="1.7.0" date="2026-11-06">
+            <description translate="no">
+                <ul>
+                <li>New ReccoBeats provider: reliable instrumental detection via audio analysis, resolving tracks by ISRC (local tags or Deezer). MusicBrainz moved to last in the provider order and is disabled by default (known false positives).</li>
+                </ul>
+            </description>
+        </release>
         <release version="1.6.1" date="2026-11-03">
             <description translate="no">
                 <ul>

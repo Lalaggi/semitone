@@ -1,10 +1,6 @@
 namespace G4 {
 
     public async LyricsCandidate? provider_fetch_megalobiz (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-megalobiz-enabled")) {
-            lyrics_log ("Megalobiz: disable");
-            return null;
-        }
 
         var query = Uri.escape_string ("%s %s".printf (music.title, music.artist), null, false);
         var search_url = "https://www.megalobiz.com/search/all?qry=%s&display=more".printf (query);

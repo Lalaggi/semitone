@@ -121,10 +121,6 @@ namespace G4 {
     }
 
     public async LyricsCandidate? provider_fetch_simpmusic (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-simpmusic-enabled")) {
-            lyrics_log ("SimpMusic: disable");
-            return null;
-        }
 
         string? yt_id = get_youtube_id_from_all_metadata (music.uri);
         if (yt_id == null)

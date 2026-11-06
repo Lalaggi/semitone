@@ -10,10 +10,6 @@ namespace G4 {
     }
 
     public async LyricsCandidate? provider_fetch_kugou (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-kugou-enabled")) {
-            lyrics_log ("KuGou: disable");
-            return null;
-        }
 
         var query = "%s %s".printf (music.title, music.artist).strip ();
         if (query.length < 2) return null;

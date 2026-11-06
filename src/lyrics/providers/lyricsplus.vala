@@ -79,34 +79,18 @@ namespace G4 {
     }
 
     public async LyricsCandidate? provider_fetch_lyricsplus_apple (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-lyricsplus-apple-enabled")) {
-            lyrics_log ("LyricsPlus (Apple Music): disable");
-            return null;
-        }
         return yield lyricsplus_fetch_provider (music, duration_ms, index, cancellable, "qapple", "Apple Music - LyricsPlus");
     }
 
     public async LyricsCandidate? provider_fetch_lyricsplus_qq (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-lyricsplus-qq-enabled")) {
-            lyrics_log ("LyricsPlus (QQ Music): disable");
-            return null;
-        }
         return yield lyricsplus_fetch_provider (music, duration_ms, index, cancellable, "qq", "QQ - LyricsPlus");
     }
 
     public async LyricsCandidate? provider_fetch_lyricsplus_deezer (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-lyricsplus-deezer-enabled")) {
-            lyrics_log ("LyricsPlus (Deezer): disable");
-            return null;
-        }
         return yield lyricsplus_fetch_provider (music, duration_ms, index, cancellable, "deezer", "Deezer - LyricsPlus");
     }
 
     public async LyricsCandidate? provider_fetch_lyricsplus_musixmatch (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-lyricsplus-musixmatch-enabled")) {
-            lyrics_log ("LyricsPlus (Musixmatch): disable");
-            return null;
-        }
         return yield lyricsplus_fetch_provider (music, duration_ms, index, cancellable, "musixmatch", "MusixMatch - LyricsPlus");
     }
 

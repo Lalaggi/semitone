@@ -201,10 +201,6 @@ namespace G4 {
     }
 
     public async LyricsCandidate? provider_fetch_unison (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-unison-enabled")) {
-            lyrics_log ("Unison: disable");
-            return null;
-        }
 
         var duration_sec = (int) (duration_ms / 1000);
 

@@ -194,10 +194,6 @@ namespace G4 {
     }
 
     public async LyricsCandidate? provider_fetch_paxsenix (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-paxsenix-enabled")) {
-            lyrics_log ("Lyrically: disable");
-            return null;
-        }
 
         var clean_title  = paxsenix_clean_title (music.title);
         var clean_artist = paxsenix_clean_artist (music.artist);

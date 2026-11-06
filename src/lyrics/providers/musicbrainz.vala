@@ -1,10 +1,6 @@
 namespace G4 {
 
     public async LyricsCandidate? provider_fetch_musicbrainz (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-musicbrainz-enabled")) {
-            lyrics_log ("MusicBrainz: disable");
-            return null;
-        }
 
         var query = "recording:%s AND artist:%s".printf (
             Uri.escape_string (music.title, null, false),

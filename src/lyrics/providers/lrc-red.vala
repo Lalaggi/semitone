@@ -13,25 +13,10 @@ namespace G4 {
         public double score;
     }
 
-    // ISRC: 2-letter country + 3-char registrant + 2-digit year + 5-digit designation
-    private string? lrc_red_find_isrc (string text) {
-        try {
-            var re = new Regex ("\\b[A-Z]{2}[A-Z0-9]{3}\\d{2}\\d{5}\\b");
-            MatchInfo info;
-            if (re.match (text.up (), 0, out info)) {
-                var m = info.fetch (0);
-                if (m != null && ((!)m).length == 12) return (!)m;
-            }
-        } catch (RegexError e) {}
-        return null;
-    }
-
     private string? lrc_red_isrc_for_music (Music music) {
-        var found = lrc_red_find_isrc (music.comment);
-        if (found != null) return found;
-        var metadata_text = get_all_string_metadata_text (music.uri);
-        if (metadata_text == null) return null;
-        return lrc_red_find_isrc ((!)metadata_text);
+        // ISRC lookup is shared with ReccoBeats: LRC.red serves lyrics for an
+        // ISRC and ReccoBeats resolves audio features for the same one.
+        return lyrics_isrc_for_music (music);
     }
 
     private async string? lrc_red_get (string path, GLib.Cancellable? cancellable) {
@@ -152,10 +137,6 @@ namespace G4 {
     }
 
     public async LyricsCandidate? provider_fetch_lrc_red (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-lrc-red-enabled")) {
-            lyrics_log ("LRC.red: disable");
-            return null;
-        }
 
         // ISRC lookup is exact — prefer it when tags carry one
         var isrc = lrc_red_isrc_for_music (music);

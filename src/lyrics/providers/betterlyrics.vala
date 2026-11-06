@@ -1,11 +1,6 @@
 namespace G4 {
 
     public async LyricsCandidate? provider_fetch_betterlyrics (Music music, int duration_ms, Settings settings, int index, GLib.Cancellable? cancellable = null) {
-        if (!settings.get_boolean ("lyrics-betterlyrics-enabled")) {
-            lyrics_log ("BetterLyrics: disable");
-            return null;
-        }
-
         var duration_sec = (int) (duration_ms / 1000);
         var url = "https://lyrics-api.boidu.dev/getLyrics?s=%s&a=%s&al=%s&d=%d".printf (
             Uri.escape_string (music.title, null, false),
